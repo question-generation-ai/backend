@@ -1,0 +1,142 @@
+// Prisma schema for Question Generator
+// DB: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Question {
+  id           String   @id @default(uuid())
+  subject      String
+  chapter      String
+  difficulty   String
+  type         String
+  content      String
+  answer       String
+  explanation  String
+  metadata     Json?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  quality_metrics QualityMetrics[]
+  feedback_data FeedbackData[]
+}
+
+model QuestionTemplate {
+  id             String   @id @default(uuid())
+  template_type  String
+  structure      Json
+  variables      Json
+  prompt_template String
+  created_at     DateTime @default(now())
+}
+
+model Subject {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  chapters          Json
+  curriculum_details Json
+  grade_levels      Json
+}
+
+model UserAccount {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password_hash    String
+  api_key          String   @unique
+  subscription_tier String
+  usage_limits     Json
+  created_at       DateTime @default(now())
+  api_keys         ApiKey[]
+  usage_tracking   UsageTracking[]
+  export_history   ExportHistory[]
+  analytics_events AnalyticsEvent[]
+  feedback_data    FeedbackData[]
+}
+
+model ApiKey {
+  id           String   @id @default(uuid())
+  user         UserAccount @relation(fields: [user_id], references: [id])
+  user_id      String
+  key_hash     String
+  permissions  Json
+  rate_limits  Json
+  expires_at   DateTime
+  created_at   DateTime @default(now())
+  usage_tracking UsageTracking[]
+}
+
+model UsageTracking {
+  id            String   @id @default(uuid())
+  user          UserAccount @relation(fields: [user_id], references: [id])
+  user_id       String
+  api_key       ApiKey   @relation(fields: [api_key_id], references: [id])
+  api_key_id    String
+  endpoint      String
+  request_data  Json
+  response_time Int
+  tokens_used   Int
+  timestamp     DateTime @default(now())
+}
+
+model QuestionCache {
+  id          String   @id @default(uuid())
+  cache_key   String  @unique
+  question_data Json
+  hit_count   Int     @default(0)
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+}
+
+model QualityMetrics {
+  id              String   @id @default(uuid())
+  question        Question @relation(fields: [question_id], references: [id])
+  question_id     String
+  grammar_score   Float
+  relevance_score Float
+  difficulty_score Float
+  user_ratings    Json
+}
+
+model FeedbackData {
+  id                    String   @id @default(uuid())
+  question              Question @relation(fields: [question_id], references: [id])
+  question_id           String
+  user                  UserAccount @relation(fields: [user_id], references: [id])
+  user_id               String
+  rating                Int
+  comments              String
+  improvement_suggestions String
+  timestamp             DateTime @default(now())
+}
+
+model ExportHistory {
+  id          String   @id @default(uuid())
+  user        UserAccount @relation(fields: [user_id], references: [id])
+  user_id     String
+  export_type String
+  question_ids Json
+  file_path   String
+  timestamp   DateTime @default(now())
+}
+
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  user        UserAccount @relation(fields: [user_id], references: [id])
+  user_id     String
+  event_type  String
+  event_data  Json
+  timestamp   DateTime @default(now())
+}
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  config_key  String  @unique
+  config_value String
+  description String
+  updated_at  DateTime @updatedAt
+}

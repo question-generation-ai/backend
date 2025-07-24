@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: questiongen
+      POSTGRES_PASSWORD: questiongenpass
+      POSTGRES_DB: questiongen_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    restart: always
+    ports:
+      - '6379:6379'
+    command: ["redis-server", "--appendonly", "yes"]
+
+volumes:
+  pgdata: 
