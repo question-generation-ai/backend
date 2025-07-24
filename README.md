@@ -63,3 +63,11 @@ Get performance analytics
 GET
 /health
 Health check
+
+
+
+# how to run the backend 
+npm install
+docker-compose -f docker/docker-compose.yml up -d 
+npx prisma migrate deploy
+npx ts-node src/server.ts 
