@@ -7,28 +7,54 @@ import logger from '../utils/logger';
 const prisma = new PrismaClient();
 
 function buildPrompt(params: any): string {
-  // Example: dynamic prompt based on subject
-  if (params.subject.toLowerCase() === 'mathematics') {
-    return `Generate ${params.count} ${params.difficulty} level ${params.type} questions for ${params.subject} Chapter: ${params.chapter}. Include step-by-step solutions and explanations. Focus on concepts: ${params.concepts?.join(', ') || 'N/A'}. Avoid repetition of: ${params.exclude_patterns?.join(', ') || 'N/A'}. 
+  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel } = params;
+  
+  // Define subject-specific prompts
+  const subjectPrompts: { [key: string]: string } = {
+    'mathematics': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Mathematics Chapter: ${chapter}. Include step-by-step solutions and explanations. Focus on mathematical concepts, problem-solving strategies, and real-world applications.`,
+    
+    'physics': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Physics Chapter: ${chapter}. Include scientific principles, formulas, calculations, and real-world applications. Focus on understanding physical concepts and problem-solving.`,
+    
+    'chemistry': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Chemistry Chapter: ${chapter}. Include chemical reactions, molecular structures, calculations, and laboratory applications. Focus on chemical principles and practical understanding.`,
+    
+    'biology': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Biology Chapter: ${chapter}. Include biological processes, cell structures, ecosystems, and scientific methodology. Focus on understanding living systems and scientific inquiry.`,
+    
+    'english': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} English Chapter: ${chapter}. Include reading comprehension, grammar, vocabulary, literature analysis, and writing skills. Focus on language arts and communication.`,
+    
+    'history': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} History Chapter: ${chapter}. Include historical events, timelines, cause-and-effect relationships, and critical analysis. Focus on understanding historical context and significance.`,
+    
+    'geography': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Geography Chapter: ${chapter}. Include physical geography, human geography, maps, climate, and cultural aspects. Focus on spatial understanding and global awareness.`,
+    
+    'politics': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Politics Chapter: ${chapter}. Include political systems, governance, civic engagement, and current affairs. Focus on understanding political processes and citizenship.`,
+    
+    'economics': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Economics Chapter: ${chapter}. Include economic principles, market systems, financial literacy, and economic analysis. Focus on understanding economic concepts and decision-making.`,
+    
+    'computer-science': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Computer Science Chapter: ${chapter}. Include programming concepts, algorithms, data structures, and computational thinking. Focus on logical reasoning and problem-solving.`,
+    
+    'environmental-science': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Environmental Science Chapter: ${chapter}. Include environmental systems, sustainability, climate change, and ecological principles. Focus on environmental awareness and scientific understanding.`
+  };
+
+  // Get the specific prompt for the subject, or use default
+  const basePrompt = subjectPrompts[subject.toLowerCase()] || 
+    `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} ${subject} Chapter: ${chapter}. Include relevant concepts and explanations.`;
+
+  // Add common elements
+  let prompt = basePrompt;
+  
+  if (concepts && concepts.length > 0) {
+    prompt += ` Focus on concepts: ${concepts.join(', ')}.`;
+  }
+  
+  if (exclude_patterns && exclude_patterns.length > 0) {
+    prompt += ` Avoid repetition of: ${exclude_patterns.join(', ')}.`;
+  }
+
+  // Add format instructions
+  prompt += ` 
 
 IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text. Each question should have: question, options (for multiple choice), correct_answer, explanation, difficulty_score.`;
-  } else if (params.subject.toLowerCase() === 'science') {
-    return `Create ${params.count} ${params.difficulty} level ${params.type} questions about ${params.chapter} in ${params.subject}. Include diagrams where helpful, scientific explanations, and real-world applications. Focus on: ${params.concepts?.join(', ') || 'N/A'}. 
 
-IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text. Each question should have: question, options (for multiple choice), answer, explanation, related_concepts.`;
-  } else if (params.subject.toLowerCase() === 'english' || params.subject.toLowerCase() === 'language arts') {
-    return `Generate ${params.count} ${params.difficulty} level ${params.type} questions for ${params.chapter} covering ${params.concepts?.join(', ') || 'N/A'}. Include passages if needed, vocabulary in context, and detailed explanations. 
-
-IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text.`;
-  } else if (params.subject.toLowerCase() === 'social studies') {
-    return `Create ${params.count} ${params.difficulty} level questions about ${params.chapter} in ${params.subject}. Include historical context, cause-and-effect relationships, and critical thinking elements. 
-
-IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text.`;
-  }
-  // Default prompt
-  return `Generate ${params.count} ${params.difficulty} ${params.type} questions for ${params.subject} chapter ${params.chapter}. 
-
-IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text.`;
+  return prompt;
 }
 
 function parseAIResponse(aiResponse: any): any[] {

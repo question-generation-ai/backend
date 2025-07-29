@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { generateQuestions, searchQuestions, bulkGenerateQuestions, getQuestionTemplates, updateQuestionFeedback } from '../../services/question.service';
+import { PDFService } from '../../services/pdf.service';
 import { z } from 'zod';
 import { validate } from '../../middleware/validate';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
@@ -11,6 +14,7 @@ const generateSchema = z.object({
   difficulty: z.string(),
   type: z.string(),
   count: z.number().int().min(1).max(100),
+  classLevel: z.string().optional(),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
 });
@@ -71,6 +75,88 @@ router.put('/:id/feedback', validate(feedbackSchema), async (req, res) => {
     const feedback = req.body;
     const result = await updateQuestionFeedback(id, feedback);
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate PDF with questions
+router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
+  try {
+    const params = req.body;
+    const { includeAnswers = false, includeExplanations = false } = req.body;
+    
+    // Generate questions
+    const result = await generateQuestions(params);
+    const questions = result.questions;
+    
+    // Generate PDF
+    const pdfFilename = await PDFService.generateQuestionPDF(questions, {
+      title: `${params.subject} Questions - ${params.chapter}`,
+      subject: params.subject,
+      chapter: params.chapter,
+      difficulty: params.difficulty,
+      includeAnswers,
+      includeExplanations,
+    });
+    
+    res.json({ 
+      success: true, 
+      pdfFilename,
+      downloadUrl: `/api/v1/questions/download-pdf/${pdfFilename}`,
+      questions: questions.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate answer key PDF
+router.post('/generate-answer-key', validate(generateSchema), async (req, res) => {
+  try {
+    const params = req.body;
+    
+    // Generate questions
+    const result = await generateQuestions(params);
+    const questions = result.questions;
+    
+    // Generate answer key PDF
+    const pdfFilename = await PDFService.generateAnswerKeyPDF(questions, {
+      title: `${params.subject} Answer Key - ${params.chapter}`,
+      subject: params.subject,
+      chapter: params.chapter,
+      difficulty: params.difficulty,
+    });
+    
+    res.json({ 
+      success: true, 
+      pdfFilename,
+      downloadUrl: `/api/v1/questions/download-pdf/${pdfFilename}`,
+      questions: questions.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download PDF file
+router.get('/download-pdf/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const uploadsDir = path.join(__dirname, '../../../uploads');
+    const filepath = path.join(uploadsDir, filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ error: 'PDF file not found' });
+    }
+    
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Send file
+    res.sendFile(filepath);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
