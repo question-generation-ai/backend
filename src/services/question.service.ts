@@ -53,6 +53,51 @@ function parseAIResponse(aiResponse: any): any[] {
     // Trim whitespace
     cleanText = cleanText.trim();
     
+    // Find the first complete JSON object/array
+    let jsonStart = cleanText.indexOf('[');
+    if (jsonStart === -1) jsonStart = cleanText.indexOf('{');
+    
+    if (jsonStart !== -1) {
+      // Find the matching closing bracket/brace
+      let bracketCount = 0;
+      let braceCount = 0;
+      let inString = false;
+      let escapeNext = false;
+      
+      for (let i = jsonStart; i < cleanText.length; i++) {
+        const char = cleanText[i];
+        
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+        
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+        
+        if (char === '"' && !escapeNext) {
+          inString = !inString;
+          continue;
+        }
+        
+        if (!inString) {
+          if (char === '[') bracketCount++;
+          else if (char === ']') bracketCount--;
+          else if (char === '{') braceCount++;
+          else if (char === '}') braceCount--;
+          
+          // If we've found the complete JSON structure
+          if ((cleanText[jsonStart] === '[' && bracketCount === 0) || 
+              (cleanText[jsonStart] === '{' && braceCount === 0)) {
+            cleanText = cleanText.substring(jsonStart, i + 1);
+            break;
+          }
+        }
+      }
+    }
+    
     console.log('Cleaned text:', cleanText);
     
     // Try to parse as JSON
@@ -156,13 +201,13 @@ export async function generateQuestions(params: any) {
   const cacheKey = getCacheKey(params);
   let cacheInfo = { hit: false, key: cacheKey };
   
-  // Try cache first
-  const cached = await redisClient.get(cacheKey);
-  if (cached) {
-    logger.info(`Cache hit for key: ${cacheKey}`);
-    cacheInfo.hit = true;
-    return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
-  }
+  // Temporarily disable caching to ensure fresh responses
+  // const cached = await redisClient.get(cacheKey);
+  // if (cached) {
+  //   logger.info(`Cache hit for key: ${cacheKey}`);
+  //   cacheInfo.hit = true;
+  //   return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
+  // }
   
   logger.info(`Cache miss for key: ${cacheKey}`);
   
@@ -172,8 +217,8 @@ export async function generateQuestions(params: any) {
     const aiResponse = await GeminiAIService.generateContent(prompt);
     const questions = parseAIResponse(aiResponse);
     
-    // Cache result for 1 hour
-    await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 3600 });
+    // Cache result for 1 hour (temporarily disabled)
+    // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 3600 });
     return { questions, metadata: { source: 'ai' }, cache_info: cacheInfo };
   } catch (error) {
     logger.warn(`AI service failed, using mock data: ${error}`);
@@ -181,8 +226,8 @@ export async function generateQuestions(params: any) {
     // Fallback to mock data
     const questions = generateMockQuestions(params);
     
-    // Cache mock result for shorter time (5 minutes)
-    await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
+    // Cache mock result for shorter time (5 minutes) (temporarily disabled)
+    // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
     return { 
       questions, 
       metadata: { 

@@ -2,7 +2,7 @@ import axios from 'axios';
 import logger from '../utils/logger';
 
 const GEMINI_API_URL = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyD3QHSw5ND0tkHzUztnDLmxI2C7su0B6ic';
 
 export class GeminiAIService {
   static async generateContent(prompt: string, maxRetries = 3): Promise<any> {
