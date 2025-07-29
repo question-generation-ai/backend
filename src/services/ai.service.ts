@@ -1,7 +1,7 @@
 import axios from 'axios';
 import logger from '../utils/logger';
 
-const GEMINI_API_URL = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_URL = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 export class GeminiAIService {
@@ -13,9 +13,28 @@ export class GeminiAIService {
         const response = await axios.post(
           `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
           {
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 2048,
+            }
           },
-          { timeout: 10000 }
+          { 
+            timeout: 30000,
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
         );
         logger.info('Gemini API success');
         return response.data;
