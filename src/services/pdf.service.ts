@@ -21,6 +21,7 @@ export interface PDFOptions {
   difficulty?: string;
   includeAnswers?: boolean;
   includeExplanations?: boolean;
+  customTitle?: string;
 }
 
 export class PDFService {
@@ -32,7 +33,7 @@ export class PDFService {
       size: 'A4',
       margin: 50,
       info: {
-        Title: options.title || 'Generated Questions',
+        Title: options.customTitle || options.title || 'Generated Questions',
         Author: 'Question Generator',
         Subject: options.subject || 'Questions',
       }
@@ -53,81 +54,89 @@ export class PDFService {
     const stream = fs.createWriteStream(filepath);
     doc.pipe(stream);
 
-    // Add header
-    doc.fontSize(24)
+    // Add custom title or default title
+    const displayTitle = options.customTitle || options.title || 'Generated Questions';
+    
+    // Add header with better styling
+    doc.fontSize(28)
        .font('Helvetica-Bold')
-       .text(options.title || 'Generated Questions', { align: 'center' });
+       .fillColor('#1f2937')
+       .text(displayTitle, { align: 'center' });
 
-    doc.moveDown(0.5);
+    doc.moveDown(1);
 
-    // Add metadata
+    // Add metadata with better styling
     if (options.subject || options.chapter || options.difficulty) {
-      doc.fontSize(12)
+      doc.fontSize(11)
          .font('Helvetica')
+         .fillColor('#6b7280')
          .text('Subject: ' + (options.subject || 'N/A'), { continued: true })
          .text(' | Chapter: ' + (options.chapter || 'N/A'), { continued: true })
          .text(' | Difficulty: ' + (options.difficulty || 'N/A'));
       doc.moveDown(0.5);
     }
 
-    doc.moveDown(1);
+    doc.moveDown(1.5);
 
-    // Add questions
+        // Add questions with clean, professional styling
     questions.forEach((question, index) => {
-      // Question number and text
-      doc.fontSize(14)
+      // Question number with better styling
+      doc.fontSize(16)
          .font('Helvetica-Bold')
+         .fillColor('#1f2937')
          .text(`Question ${index + 1}:`, { continued: true })
          .font('Helvetica')
-         .fontSize(12)
+         .fontSize(13)
+         .fillColor('#374151')
          .text(' ' + question.question);
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.8);
 
-      // Options (for multiple choice)
+      // Options (for multiple choice) with better formatting
       if (question.options && question.options.length > 0) {
-        doc.fontSize(11)
-           .font('Helvetica')
+        doc.fontSize(12)
+           .font('Helvetica-Bold')
+           .fillColor('#4b5563')
            .text('Options:');
-        
+
         question.options.forEach((option, optIndex) => {
           const optionLabel = String.fromCharCode(65 + optIndex); // A, B, C, D...
-          doc.text(`${optionLabel}) ${option}`);
+          doc.fontSize(11)
+             .font('Helvetica')
+             .fillColor('#374151')
+             .text(`${optionLabel}) ${option}`);
         });
-        doc.moveDown(0.5);
+        doc.moveDown(0.8);
       }
 
-      // Answer (if requested)
+      // Only show answers if explicitly requested
       if (options.includeAnswers) {
         doc.fontSize(11)
            .font('Helvetica-Bold')
+           .fillColor('#059669')
            .text('Answer: ', { continued: true })
            .font('Helvetica')
+           .fillColor('#374151')
            .text(question.correct_answer || question.answer || 'N/A');
         doc.moveDown(0.5);
       }
 
-      // Explanation (if requested)
+      // Only show explanations if explicitly requested
       if (options.includeExplanations && question.explanation) {
         doc.fontSize(11)
            .font('Helvetica-Bold')
+           .fillColor('#7c3aed')
            .text('Explanation: ', { continued: true })
            .font('Helvetica')
+           .fillColor('#374151')
            .text(question.explanation);
         doc.moveDown(0.5);
       }
 
-      // Difficulty score
-      if (question.difficulty_score) {
-        doc.fontSize(10)
-           .font('Helvetica-Oblique')
-           .text(`Difficulty: ${question.difficulty_score}/5`);
-      }
+      doc.moveDown(1.2);
 
-      doc.moveDown(1);
-
-      // Add page break if needed (every 3 questions)
-      if ((index + 1) % 3 === 0 && index < questions.length - 1) {
+      // Add page break if needed (every 4 questions for better spacing)
+      if ((index + 1) % 4 === 0 && index < questions.length - 1) {
         doc.addPage();
       }
     });
@@ -156,7 +165,7 @@ export class PDFService {
       size: 'A4',
       margin: 50,
       info: {
-        Title: 'Answer Key',
+        Title: options.customTitle ? `${options.customTitle} - Answer Key` : 'Answer Key',
         Author: 'Question Generator',
         Subject: 'Answer Key',
       }
@@ -177,46 +186,54 @@ export class PDFService {
     const stream = fs.createWriteStream(filepath);
     doc.pipe(stream);
 
-    // Add header
-    doc.fontSize(24)
+    // Add header with better styling
+    const answerKeyTitle = options.customTitle ? `${options.customTitle} - Answer Key` : 'Answer Key';
+    doc.fontSize(28)
        .font('Helvetica-Bold')
-       .text('Answer Key', { align: 'center' });
+       .fillColor('#1f2937')
+       .text(answerKeyTitle, { align: 'center' });
 
-    doc.moveDown(1);
+    doc.moveDown(1.5);
 
-    // Add questions with answers
+    // Add questions with answers and better styling
     questions.forEach((question, index) => {
-      // Question number and text
-      doc.fontSize(14)
+      // Question number and text with better styling
+      doc.fontSize(16)
          .font('Helvetica-Bold')
+         .fillColor('#1f2937')
          .text(`Question ${index + 1}:`, { continued: true })
          .font('Helvetica')
-         .fontSize(12)
+         .fontSize(13)
+         .fillColor('#374151')
          .text(' ' + question.question);
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.8);
 
-      // Answer
-      doc.fontSize(11)
+      // Answer with better styling
+      doc.fontSize(12)
          .font('Helvetica-Bold')
+         .fillColor('#059669')
          .text('Answer: ', { continued: true })
          .font('Helvetica')
+         .fillColor('#374151')
          .text(question.correct_answer || question.answer || 'N/A');
 
-      // Explanation
+      // Explanation with better styling
       if (question.explanation) {
-        doc.moveDown(0.5);
+        doc.moveDown(0.8);
         doc.fontSize(11)
            .font('Helvetica-Bold')
+           .fillColor('#7c3aed')
            .text('Explanation: ', { continued: true })
            .font('Helvetica')
+           .fillColor('#374151')
            .text(question.explanation);
       }
 
-      doc.moveDown(1);
+      doc.moveDown(1.2);
 
-      // Add page break if needed (every 5 questions)
-      if ((index + 1) % 5 === 0 && index < questions.length - 1) {
+      // Add page break if needed (every 4 questions for better spacing)
+      if ((index + 1) % 4 === 0 && index < questions.length - 1) {
         doc.addPage();
       }
     });

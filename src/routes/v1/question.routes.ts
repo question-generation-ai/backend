@@ -17,6 +17,8 @@ const generateSchema = z.object({
   classLevel: z.string().optional(),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
+  extraCommands: z.string().optional(),
+  title: z.string().optional(),
 });
 
 const bulkGenerateSchema = z.object({
@@ -88,7 +90,11 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
     
     // Generate questions
     const result = await generateQuestions(params);
-    const questions = result.questions;
+    const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
+    
+    // Debug: Log the questions being passed to PDF
+    console.log('Questions for PDF:', questions);
+    console.log('Number of questions:', questions.length);
     
     // Generate PDF
     const pdfFilename = await PDFService.generateQuestionPDF(questions, {
@@ -98,6 +104,7 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
       difficulty: params.difficulty,
       includeAnswers,
       includeExplanations,
+      customTitle: params.title,
     });
     
     res.json({ 
@@ -118,7 +125,7 @@ router.post('/generate-answer-key', validate(generateSchema), async (req, res) =
     
     // Generate questions
     const result = await generateQuestions(params);
-    const questions = result.questions;
+    const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
     
     // Generate answer key PDF
     const pdfFilename = await PDFService.generateAnswerKeyPDF(questions, {
@@ -126,6 +133,7 @@ router.post('/generate-answer-key', validate(generateSchema), async (req, res) =
       subject: params.subject,
       chapter: params.chapter,
       difficulty: params.difficulty,
+      customTitle: params.title,
     });
     
     res.json({ 

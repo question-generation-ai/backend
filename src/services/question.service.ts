@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 const prisma = new PrismaClient();
 
 function buildPrompt(params: any): string {
-  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel } = params;
+  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
   
   // Define subject-specific prompts
   const subjectPrompts: { [key: string]: string } = {
@@ -47,6 +47,11 @@ function buildPrompt(params: any): string {
   
   if (exclude_patterns && exclude_patterns.length > 0) {
     prompt += ` Avoid repetition of: ${exclude_patterns.join(', ')}.`;
+  }
+
+  // Add extra commands if provided
+  if (extraCommands && extraCommands.trim()) {
+    prompt += ` Additional instructions: ${extraCommands.trim()}.`;
   }
 
   // Add format instructions
@@ -239,9 +244,9 @@ export async function generateQuestions(params: any) {
   
   try {
     // Try AI service first
-    const prompt = buildPrompt(params);
-    const aiResponse = await GeminiAIService.generateContent(prompt);
-    const questions = parseAIResponse(aiResponse);
+  const prompt = buildPrompt(params);
+  const aiResponse = await GeminiAIService.generateContent(prompt);
+  const questions = parseAIResponse(aiResponse);
     
     // Cache result for 1 hour (temporarily disabled)
     // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 3600 });
