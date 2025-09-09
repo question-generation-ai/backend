@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { generateQuestions, searchQuestions, bulkGenerateQuestions, getQuestionTemplates, updateQuestionFeedback } from '../../services/question.service';
+import { VisualQuestionGenerator } from '../../services/visualQuestionGenerator.service';
 import { PDFService } from '../../services/pdf.service';
 import { z } from 'zod';
 import { validate } from '../../middleware/validate';
@@ -11,13 +12,14 @@ const router = Router();
 const generateSchema = z.object({
   subject: z.string(),
   chapter: z.string(),
-  difficulty: z.string(),
-  type: z.string(),
-  count: z.number().int().min(1).max(100),
-  classLevel: z.string().optional(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  type: z.enum(['multiple-choice', 'short-answer', 'true-false']),
+  count: z.number().min(1).max(10),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
+  classLevel: z.string().optional(),
   extraCommands: z.string().optional(),
+  enableVisuals: z.boolean().optional(),
   title: z.string().optional(),
 });
 
@@ -62,9 +64,42 @@ router.post('/bulk-generate', validate(bulkGenerateSchema), async (req, res) => 
   }
 });
 
+// Visual question generation endpoint
+router.post('/generate-visual', validate(generateSchema), async (req, res) => {
+  try {
+    const params = req.body;
+    const result = await VisualQuestionGenerator.generateVisualQuestions(params);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/templates', async (req, res) => {
   try {
     const result = await getQuestionTemplates();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// System diagnostics endpoint
+router.get('/diagnostics', async (req, res) => {
+  try {
+    const { DiagnosticsService } = await import('../../services/diagnostics.service');
+    const result = await DiagnosticsService.runCompleteDiagnostics();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// System status endpoint
+router.get('/status', async (req, res) => {
+  try {
+    const { DiagnosticsService } = await import('../../services/diagnostics.service');
+    const result = await DiagnosticsService.getSystemStatus();
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

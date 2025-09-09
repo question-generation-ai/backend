@@ -6,9 +6,11 @@ import config from './config';
 import logger from './utils/logger';
 import { connectRedis } from './utils/redisClient';
 import v1Routes from './routes/v1';
+import imageGenerationRoutes from './routes/imageGeneration.routes';
 import { apiRateLimiter } from './middleware/rateLimiter';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
+import fs from 'fs';
 
 const app = express();
 
@@ -19,8 +21,13 @@ app.use(cors({ origin: config.corsOrigin }));
 app.use(helmet());
 app.use(morgan('dev'));
 
+// Connect to Redis if available
 (async () => {
-  await connectRedis();
+  try {
+    await connectRedis();
+  } catch (error) {
+    console.warn('Redis connection failed, continuing without cache');
+  }
 })();
 
 // Health check endpoint
@@ -30,9 +37,13 @@ app.get('/api/v1/health', (req, res) => {
 
 app.use('/api', apiRateLimiter);
 app.use('/api/v1', v1Routes);
+app.use('/api/images', imageGenerationRoutes);
 
-const swaggerDocument = YAML.load('./docs/openapi.yaml');
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+const openApiPath = './docs/openapi.yaml';
+if (fs.existsSync(openApiPath)) {
+  const swaggerDocument = YAML.load(openApiPath);
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+}
 
 // 404 handler
 app.use((req, res, next) => {

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="400" fill="white"/>
+  
+  <!-- Surface -->
+  <line x1="50" y1="300" x2="350" y2="300" stroke="#666" stroke-width="2"/>
+  
+  <!-- Object -->
+  <rect x="150" y="250" width="100" height="50" rx="5" 
+        fill="#4a86e8" stroke="#1a4b8c" stroke-width="2"/>
+  
+  <!-- Forces -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+            refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="context-stroke"/>
+    </marker>
+  </defs>
+  
+  <!-- Gravity -->
+  <line x1="200" y1="300" x2="200" y2="350" 
+        stroke="#e74c3c" stroke-width="3" marker-end="url(#arrowhead)"/>
+  <text x="220" y="325" font-family="Arial" font-size="12">
+    Fg = {{objectMass * 9.8}}N
+  </text>
+  
+  <!-- Normal Force -->
+  <line x1="200" y1="200" x2="200" y2="250" 
+        stroke="#2ecc71" stroke-width="3" marker-end="url(#arrowhead)"/>
+  <text x="220" y="230" font-family="Arial" font-size="12">
+    Fn = {{objectMass * 9.8}}N
+  </text>
+  
+  <!-- Title -->
+  <text x="200" y="30" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle">
+    Free Body Diagram - Mass: 15 kg
+  </text>
+</svg>

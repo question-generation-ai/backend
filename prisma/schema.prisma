@@ -1,4 +1,4 @@
-// Prisma schema for Question Generator
+// Prisma schema for Question Generator with Template System
 // DB: PostgreSQL
 
 generator client {
@@ -11,132 +11,192 @@ datasource db {
 }
 
 model Question {
-  id           String   @id @default(uuid())
-  subject      String
-  chapter      String
-  difficulty   String
-  type         String
-  content      String
-  answer       String
-  explanation  String
-  metadata     Json?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
-  quality_metrics QualityMetrics[]
-  feedback_data FeedbackData[]
+  id               String           @id @default(uuid())
+  subject          String
+  chapter          String
+  difficulty       String
+  type             String
+  content          String
+  answer           String
+  explanation      String
+  metadata         Json?
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+  quality_metrics  QualityMetrics[]
+  feedback_data    FeedbackData[]
+  generated_images GeneratedImage[]
 }
 
 model QuestionTemplate {
-  id             String   @id @default(uuid())
-  template_type  String
-  structure      Json
-  variables      Json
+  id              String   @id @default(uuid())
+  template_type   String
+  structure       Json
+  variables       Json
   prompt_template String
-  created_at     DateTime @default(now())
+  created_at      DateTime @default(now())
 }
 
 model Subject {
-  id                String   @id @default(uuid())
-  name              String   @unique
-  chapters          Json
+  id                 String @id @default(uuid())
+  name               String @unique
+  chapters           Json
   curriculum_details Json
-  grade_levels      Json
+  grade_levels       Json
 }
 
 model UserAccount {
-  id               String   @id @default(uuid())
-  email            String   @unique
-  password_hash    String
-  api_key          String   @unique
+  id                String           @id @default(uuid())
+  email             String           @unique
+  password_hash     String
+  api_key           String           @unique
   subscription_tier String
-  usage_limits     Json
-  created_at       DateTime @default(now())
-  api_keys         ApiKey[]
-  usage_tracking   UsageTracking[]
-  export_history   ExportHistory[]
-  analytics_events AnalyticsEvent[]
-  feedback_data    FeedbackData[]
+  usage_limits      Json
+  created_at        DateTime         @default(now())
+  api_keys          ApiKey[]
+  usage_tracking    UsageTracking[]
+  export_history    ExportHistory[]
+  analytics_events  AnalyticsEvent[]
+  feedback_data     FeedbackData[]
 }
 
 model ApiKey {
-  id           String   @id @default(uuid())
-  user         UserAccount @relation(fields: [user_id], references: [id])
-  user_id      String
-  key_hash     String
-  permissions  Json
-  rate_limits  Json
-  expires_at   DateTime
-  created_at   DateTime @default(now())
+  id             String          @id @default(uuid())
+  user           UserAccount     @relation(fields: [user_id], references: [id])
+  user_id        String
+  key_hash       String
+  permissions    Json
+  rate_limits    Json
+  expires_at     DateTime
+  created_at     DateTime        @default(now())
   usage_tracking UsageTracking[]
 }
 
 model UsageTracking {
-  id            String   @id @default(uuid())
+  id            String      @id @default(uuid())
   user          UserAccount @relation(fields: [user_id], references: [id])
   user_id       String
-  api_key       ApiKey   @relation(fields: [api_key_id], references: [id])
+  api_key       ApiKey      @relation(fields: [api_key_id], references: [id])
   api_key_id    String
   endpoint      String
   request_data  Json
   response_time Int
   tokens_used   Int
-  timestamp     DateTime @default(now())
+  timestamp     DateTime    @default(now())
 }
 
 model QuestionCache {
-  id          String   @id @default(uuid())
-  cache_key   String  @unique
+  id            String   @id @default(uuid())
+  cache_key     String   @unique
   question_data Json
-  hit_count   Int     @default(0)
-  expires_at  DateTime
-  created_at  DateTime @default(now())
+  hit_count     Int      @default(0)
+  expires_at    DateTime
+  created_at    DateTime @default(now())
 }
 
 model QualityMetrics {
-  id              String   @id @default(uuid())
-  question        Question @relation(fields: [question_id], references: [id])
-  question_id     String
-  grammar_score   Float
-  relevance_score Float
+  id               String   @id @default(uuid())
+  question         Question @relation(fields: [question_id], references: [id])
+  question_id      String
+  grammar_score    Float
+  relevance_score  Float
   difficulty_score Float
-  user_ratings    Json
+  user_ratings     Json
 }
 
 model FeedbackData {
-  id                    String   @id @default(uuid())
-  question              Question @relation(fields: [question_id], references: [id])
-  question_id           String
-  user                  UserAccount @relation(fields: [user_id], references: [id])
-  user_id               String
-  rating                Int
-  comments              String
+  id                      String      @id @default(uuid())
+  question                Question    @relation(fields: [question_id], references: [id])
+  question_id             String
+  user                    UserAccount @relation(fields: [user_id], references: [id])
+  user_id                 String
+  rating                  Int
+  comments                String
   improvement_suggestions String
-  timestamp             DateTime @default(now())
+  timestamp               DateTime    @default(now())
 }
 
 model ExportHistory {
-  id          String   @id @default(uuid())
-  user        UserAccount @relation(fields: [user_id], references: [id])
-  user_id     String
-  export_type String
+  id           String      @id @default(uuid())
+  user         UserAccount @relation(fields: [user_id], references: [id])
+  user_id      String
+  export_type  String
   question_ids Json
-  file_path   String
-  timestamp   DateTime @default(now())
+  file_path    String
+  timestamp    DateTime    @default(now())
 }
 
 model AnalyticsEvent {
-  id          String   @id @default(uuid())
-  user        UserAccount @relation(fields: [user_id], references: [id])
-  user_id     String
-  event_type  String
-  event_data  Json
-  timestamp   DateTime @default(now())
+  id         String      @id @default(uuid())
+  user       UserAccount @relation(fields: [user_id], references: [id])
+  user_id    String
+  event_type String
+  event_data Json
+  timestamp  DateTime    @default(now())
 }
 
 model SystemConfig {
-  id          String   @id @default(uuid())
-  config_key  String  @unique
+  id           String   @id @default(uuid())
+  config_key   String   @unique
   config_value String
-  description String
-  updated_at  DateTime @updatedAt
+  description  String
+  updated_at   DateTime @updatedAt
+}
+
+// Template System Models
+model TemplateCategory {
+  id          String     @id @default(cuid())
+  name        String     @unique // "mathematics", "physics", "chemistry", "biology"
+  description String?
+  templates   Template[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Template {
+  id           String           @id @default(cuid())
+  name         String
+  description  String?
+  category     TemplateCategory @relation(fields: [categoryId], references: [id])
+  categoryId   String
+  type         TemplateType     @default(SVG)
+  svgContent   String? // Base SVG template
+  canvasConfig Json? // Canvas drawing configuration
+  parameters   Json // Customizable parameters schema
+  previewUrl   String?
+  isActive     Boolean          @default(true)
+  usageCount   Int              @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  // Relations
+  generatedImages GeneratedImage[]
+}
+
+model GeneratedImage {
+  id             String         @id @default(cuid())
+  template       Template?      @relation(fields: [templateId], references: [id])
+  templateId     String?
+  question       Question?      @relation(fields: [questionId], references: [id])
+  questionId     String? // Link to question if exists
+  generationType GenerationType
+  imageUrl       String
+  parameters     Json? // Parameters used for generation
+  cost           Float? // Cost for AI generation
+  cacheKey       String? // For caching optimization
+  createdAt      DateTime       @default(now())
+
+  @@index([cacheKey])
+  @@index([questionId])
+}
+
+enum TemplateType {
+  SVG
+  CANVAS
+  HYBRID
+}
+
+enum GenerationType {
+  TEMPLATE
+  AI_GENERATED
+  HYBRID
 }

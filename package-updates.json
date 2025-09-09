@@ -1,0 +1,17 @@
+{
+  "newDependencies": {
+    "canvas": "^2.11.2",
+    "sharp": "^0.32.6",
+    "node-html-to-image": "^4.0.0",
+    "svg2png": "^4.1.1",
+    "fabric": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/canvas": "^2.0.1",
+    "@types/sharp": "^0.32.0"
+  },
+  "scripts": {
+    "seed:templates": "ts-node scripts/seedTemplates.ts",
+    "generate:sample": "ts-node scripts/generateSampleImages.ts"
+  }
+}
