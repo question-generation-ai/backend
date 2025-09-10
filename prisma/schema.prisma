@@ -59,6 +59,15 @@ model UserAccount {
   feedback_data     FeedbackData[]
 }
 
+model TokenBlacklist {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([expires_at])
+}
+
 model ApiKey {
   id             String          @id @default(uuid())
   user           UserAccount     @relation(fields: [user_id], references: [id])

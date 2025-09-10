@@ -38,4 +38,14 @@ export function verifyRefreshToken(token: string) {
   } catch {
     return null;
   }
+}
+
+export async function logoutUser(token: string) {
+  try {
+    const { TokenBlacklistService } = await import('./tokenBlacklist.service');
+    await TokenBlacklistService.blacklistToken(token);
+    return { success: true, message: 'Logged out successfully' };
+  } catch (error: any) {
+    throw new Error('Logout failed: ' + error.message);
+  }
 } 
