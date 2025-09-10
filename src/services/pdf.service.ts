@@ -28,7 +28,7 @@ export class PDFService {
   static async generateQuestionPDF(
     questions: QuestionData[],
     options: PDFOptions = {}
-  ): Promise<string> {
+  ): Promise<Buffer> {
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
@@ -39,27 +39,12 @@ export class PDFService {
       }
     });
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    console.log(`[PDF Service] Uploads directory: ${uploadsDir}`);
+    console.log(`[PDF Service] Generating PDF in memory (no file system)`);
     
-    if (!fs.existsSync(uploadsDir)) {
-      console.log(`[PDF Service] Creating uploads directory: ${uploadsDir}`);
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    } else {
-      console.log(`[PDF Service] Uploads directory already exists`);
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const filename = `questions_${timestamp}.pdf`;
-    const filepath = path.join(uploadsDir, filename);
-    console.log(`[PDF Service] Generated filename: ${filename}`);
-    console.log(`[PDF Service] Full filepath: ${filepath}`);
-
-    // Pipe PDF to file
-    const stream = fs.createWriteStream(filepath);
-    doc.pipe(stream);
+    // Collect PDF data in memory instead of writing to file
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => console.log(`[PDF Service] PDF generation completed`));
 
     // Add custom title or default title
     const displayTitle = options.customTitle || options.title || 'Generated Questions';
@@ -157,19 +142,12 @@ export class PDFService {
     doc.end();
 
     return new Promise((resolve, reject) => {
-      stream.on('finish', () => {
-        console.log(`[PDF Service] PDF file created successfully: ${filepath}`);
-        // Verify file exists and get stats
-        if (fs.existsSync(filepath)) {
-          const stats = fs.statSync(filepath);
-          console.log(`[PDF Service] File size: ${stats.size} bytes`);
-          console.log(`[PDF Service] File permissions: ${stats.mode.toString(8)}`);
-        } else {
-          console.error(`[PDF Service] ERROR: File does not exist after creation: ${filepath}`);
-        }
-        resolve(filename);
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        console.log(`[PDF Service] PDF generated in memory - Size: ${pdfBuffer.length} bytes`);
+        resolve(pdfBuffer);
       });
-      stream.on('error', (error) => {
+      doc.on('error', (error: any) => {
         console.error(`[PDF Service] ERROR creating PDF: ${error.message}`);
         reject(error);
       });
@@ -179,7 +157,7 @@ export class PDFService {
   static async generateAnswerKeyPDF(
     questions: QuestionData[],
     options: PDFOptions = {}
-  ): Promise<string> {
+  ): Promise<Buffer> {
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
@@ -190,20 +168,12 @@ export class PDFService {
       }
     });
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const filename = `answer_key_${timestamp}.pdf`;
-    const filepath = path.join(uploadsDir, filename);
-
-    // Pipe PDF to file
-    const stream = fs.createWriteStream(filepath);
-    doc.pipe(stream);
+    console.log(`[PDF Service] Generating Answer Key PDF in memory`);
+    
+    // Collect PDF data in memory instead of writing to file
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => console.log(`[PDF Service] Answer Key PDF generation completed`));
 
     // Add header with better styling
     const answerKeyTitle = options.customTitle ? `${options.customTitle} - Answer Key` : 'Answer Key';
@@ -266,10 +236,15 @@ export class PDFService {
     doc.end();
 
     return new Promise((resolve, reject) => {
-      stream.on('finish', () => {
-        resolve(filename);
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        console.log(`[PDF Service] Answer Key PDF generated in memory - Size: ${pdfBuffer.length} bytes`);
+        resolve(pdfBuffer);
       });
-      stream.on('error', reject);
+      doc.on('error', (error: any) => {
+        console.error(`[PDF Service] ERROR creating Answer Key PDF: ${error.message}`);
+        reject(error);
+      });
     });
   }
-} 
+}
