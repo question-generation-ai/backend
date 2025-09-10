@@ -186,7 +186,7 @@ router.post('/generate-answer-key', validate(generateSchema), async (req, res) =
 router.get('/download-pdf/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
-    const uploadsDir = path.join(__dirname, '../../../uploads');
+    const uploadsDir = path.join(process.cwd(), 'uploads');
     const filepath = path.join(uploadsDir, filename);
     
     // Check if file exists
