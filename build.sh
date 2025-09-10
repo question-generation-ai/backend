@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Build script for production
+# Install dependencies
+npm ci
+
+# Build TypeScript
 npm run build
 
 # Generate Prisma client
