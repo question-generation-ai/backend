@@ -41,14 +41,21 @@ export class PDFService {
 
     // Create uploads directory if it doesn't exist
     const uploadsDir = path.join(process.cwd(), 'uploads');
+    console.log(`[PDF Service] Uploads directory: ${uploadsDir}`);
+    
     if (!fs.existsSync(uploadsDir)) {
+      console.log(`[PDF Service] Creating uploads directory: ${uploadsDir}`);
       fs.mkdirSync(uploadsDir, { recursive: true });
+    } else {
+      console.log(`[PDF Service] Uploads directory already exists`);
     }
 
     // Generate unique filename
     const timestamp = Date.now();
     const filename = `questions_${timestamp}.pdf`;
     const filepath = path.join(uploadsDir, filename);
+    console.log(`[PDF Service] Generated filename: ${filename}`);
+    console.log(`[PDF Service] Full filepath: ${filepath}`);
 
     // Pipe PDF to file
     const stream = fs.createWriteStream(filepath);
@@ -151,9 +158,21 @@ export class PDFService {
 
     return new Promise((resolve, reject) => {
       stream.on('finish', () => {
+        console.log(`[PDF Service] PDF file created successfully: ${filepath}`);
+        // Verify file exists and get stats
+        if (fs.existsSync(filepath)) {
+          const stats = fs.statSync(filepath);
+          console.log(`[PDF Service] File size: ${stats.size} bytes`);
+          console.log(`[PDF Service] File permissions: ${stats.mode.toString(8)}`);
+        } else {
+          console.error(`[PDF Service] ERROR: File does not exist after creation: ${filepath}`);
+        }
         resolve(filename);
       });
-      stream.on('error', reject);
+      stream.on('error', (error) => {
+        console.error(`[PDF Service] ERROR creating PDF: ${error.message}`);
+        reject(error);
+      });
     });
   }
 

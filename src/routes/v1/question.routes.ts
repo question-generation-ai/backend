@@ -186,21 +186,47 @@ router.post('/generate-answer-key', validate(generateSchema), async (req, res) =
 router.get('/download-pdf/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
+    console.log(`[Download] Request for file: ${filename}`);
+    console.log(`[Download] Request headers:`, req.headers);
+    
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const filepath = path.join(uploadsDir, filename);
     
+    console.log(`[Download] Uploads directory: ${uploadsDir}`);
+    console.log(`[Download] Full filepath: ${filepath}`);
+    
     // Check if file exists
     if (!fs.existsSync(filepath)) {
+      console.error(`[Download] ERROR: File not found: ${filepath}`);
+      console.log(`[Download] Directory contents:`, fs.readdirSync(uploadsDir));
       return res.status(404).json({ error: 'PDF file not found' });
     }
+    
+    // Get file stats
+    const stats = fs.statSync(filepath);
+    console.log(`[Download] File exists - Size: ${stats.size} bytes, Mode: ${stats.mode.toString(8)}`);
     
     // Set headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', stats.size.toString());
+    
+    console.log(`[Download] Response headers set`);
+    console.log(`[Download] Sending file: ${filepath}`);
     
     // Send file
-    res.sendFile(filepath);
+    res.sendFile(filepath, (err) => {
+      if (err) {
+        console.error(`[Download] ERROR sending file: ${err.message}`);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Error sending file' });
+        }
+      } else {
+        console.log(`[Download] File sent successfully: ${filename}`);
+      }
+    });
   } catch (err: any) {
+    console.error(`[Download] ERROR in download route: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
