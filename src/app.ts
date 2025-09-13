@@ -37,6 +37,11 @@ app.use(morgan('dev'));
   }
 })();
 
+// Root and health check endpoints
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Question Generator API', docs: '/api-docs', health: '/api/v1/health' });
+});
+
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ status: 'ok', env: config.env });

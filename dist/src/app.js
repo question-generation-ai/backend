@@ -38,6 +38,10 @@ app.use((0, morgan_1.default)('dev'));
         console.warn('Redis connection failed, continuing without cache');
     }
 })();
+// Root and health check endpoints
+app.get('/', (req, res) => {
+    res.status(200).json({ status: 'ok', message: 'Question Generator API', docs: '/api-docs', health: '/api/v1/health' });
+});
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
     res.status(200).json({ status: 'ok', env: config_1.default.env });
