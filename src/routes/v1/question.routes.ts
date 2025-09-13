@@ -13,7 +13,7 @@ const generateSchema = z.object({
   subject: z.string(),
   chapter: z.string(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
-  type: z.enum(['multiple-choice', 'short-answer', 'true-false']),
+  type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
   count: z.number().min(1).max(10),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
@@ -21,6 +21,7 @@ const generateSchema = z.object({
   extraCommands: z.string().optional(),
   enableVisuals: z.boolean().optional(),
   title: z.string().optional(),
+  provider: z.enum(['gemini', 'openai']).optional(),
 });
 
 const bulkGenerateSchema = z.object({
@@ -34,11 +35,55 @@ const feedbackSchema = z.object({
   quality_issues: z.array(z.string()).optional(),
 });
 
+// A/B testing schema (same as generateSchema but without provider override)
+const abGenerateSchema = z.object({
+  subject: z.string(),
+  chapter: z.string(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
+  count: z.number().min(1).max(10),
+  concepts: z.array(z.string()).optional(),
+  exclude_patterns: z.array(z.string()).optional(),
+  classLevel: z.string().optional(),
+  extraCommands: z.string().optional(),
+  title: z.string().optional(),
+});
+
+const abFeedbackSchema = z.object({
+  selection: z.enum(['gemini', 'openai']),
+  reason: z.string().optional(),
+});
+
 router.post('/generate', validate(generateSchema), async (req, res) => {
   try {
     const params = req.body;
-    const questions = await generateQuestions(params);
-    res.json({ questions });
+    const result = await generateQuestions(params);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A/B generate: returns two sets, one from Gemini and one from OpenAI
+router.post('/ab-generate', validate(abGenerateSchema), async (req, res) => {
+  try {
+    const baseParams = req.body;
+    const [gemini, openai] = await Promise.all([
+      generateQuestions({ ...baseParams, provider: 'gemini' }),
+      generateQuestions({ ...baseParams, provider: 'openai' }),
+    ]);
+    res.json({ gemini, openai });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A/B feedback placeholder
+router.post('/ab-feedback', validate(abFeedbackSchema), async (req, res) => {
+  try {
+    const { selection, reason } = req.body;
+    console.log('[AB Feedback]', { selection, reason });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -204,4 +249,4 @@ router.get('/download-pdf/:filename', async (req, res) => {
   });
 });
 
-export default router; 
+export default router;

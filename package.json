@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "dev": "ts-node-dev --respawn src/server.ts",
     "build": "tsc && npm run prisma:generate",
     "build:prod": "npm run build && npm run prisma:migrate",
