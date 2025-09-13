@@ -7,9 +7,12 @@ exports.GeminiAIService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const GEMINI_API_URL = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyD3QHSw5ND0tkHzUztnDLmxI2C7su0B6ic';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 class GeminiAIService {
     static async generateContent(prompt, maxRetries = 3) {
+        if (!GEMINI_API_KEY) {
+            throw new Error('Missing GEMINI_API_KEY');
+        }
         let attempt = 0;
         let lastError = null;
         while (attempt < maxRetries) {

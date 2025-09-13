@@ -7,19 +7,71 @@ exports.connectRedis = void 0;
 const redis_1 = require("redis");
 const redis_2 = __importDefault(require("../config/redis"));
 const logger_1 = __importDefault(require("./logger"));
-const redisClient = (0, redis_1.createClient)({
-    socket: {
-        host: redis_2.default.host,
-        port: redis_2.default.port,
-    },
-    password: redis_2.default.password,
-});
-redisClient.on('error', (err) => logger_1.default.error('Redis Client Error: ' + err));
+let client = null;
+const createRedisClient = () => {
+    if (client)
+        return client;
+    if (redis_2.default.url) {
+        client = (0, redis_1.createClient)({
+            url: redis_2.default.url,
+            password: redis_2.default.password,
+            socket: {
+                reconnectStrategy: (retries) => Math.min(retries * 50, 500),
+                connectTimeout: 10000,
+            }
+        });
+    }
+    else {
+        client = (0, redis_1.createClient)({
+            socket: {
+                host: redis_2.default.host,
+                port: redis_2.default.port,
+                reconnectStrategy: (retries) => Math.min(retries * 50, 500),
+                connectTimeout: 10000,
+            },
+            password: redis_2.default.password,
+        });
+    }
+    client.on('error', (err) => {
+        logger_1.default.error('Redis Client Error: ' + err.message);
+        // Don't throw, just log the error
+    });
+    client.on('connect', () => {
+        logger_1.default.info('Redis client connected');
+    });
+    client.on('reconnecting', () => {
+        logger_1.default.info('Redis client reconnecting...');
+    });
+    return client;
+};
 const connectRedis = async () => {
-    if (!redisClient.isOpen) {
-        await redisClient.connect();
-        logger_1.default.info('Connected to Redis');
+    if (!redis_2.default.enabled) {
+        logger_1.default.warn('Redis is not configured. Skipping Redis connection.');
+        return;
+    }
+    try {
+        const c = createRedisClient();
+        if (!c.isOpen) {
+            await c.connect();
+            logger_1.default.info('Connected to Redis');
+        }
+    }
+    catch (error) {
+        logger_1.default.error(`Failed to connect to Redis: ${error instanceof Error ? error.message : String(error)}`);
+        // Don't throw - let the app continue without Redis
     }
 };
 exports.connectRedis = connectRedis;
-exports.default = redisClient;
+// Default export: a safe object when Redis is disabled to avoid runtime errors
+const safeClient = (() => {
+    if (!redis_2.default.enabled) {
+        return {
+            isOpen: false,
+            on: () => { },
+            connect: async () => { },
+            quit: async () => { },
+        };
+    }
+    return createRedisClient();
+})();
+exports.default = safeClient;

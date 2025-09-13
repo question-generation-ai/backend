@@ -12,18 +12,36 @@ const createRedisClient = () => {
     if (client)
         return client;
     if (redis_2.default.url) {
-        client = (0, redis_1.createClient)({ url: redis_2.default.url, password: redis_2.default.password });
+        client = (0, redis_1.createClient)({
+            url: redis_2.default.url,
+            password: redis_2.default.password,
+            socket: {
+                reconnectStrategy: (retries) => Math.min(retries * 50, 500),
+                connectTimeout: 10000,
+            }
+        });
     }
     else {
         client = (0, redis_1.createClient)({
             socket: {
                 host: redis_2.default.host,
                 port: redis_2.default.port,
+                reconnectStrategy: (retries) => Math.min(retries * 50, 500),
+                connectTimeout: 10000,
             },
             password: redis_2.default.password,
         });
     }
-    client.on('error', (err) => logger_1.default.error('Redis Client Error: ' + err));
+    client.on('error', (err) => {
+        logger_1.default.error('Redis Client Error: ' + err.message);
+        // Don't throw, just log the error
+    });
+    client.on('connect', () => {
+        logger_1.default.info('Redis client connected');
+    });
+    client.on('reconnecting', () => {
+        logger_1.default.info('Redis client reconnecting...');
+    });
     return client;
 };
 const connectRedis = async () => {
@@ -31,10 +49,16 @@ const connectRedis = async () => {
         logger_1.default.warn('Redis is not configured. Skipping Redis connection.');
         return;
     }
-    const c = createRedisClient();
-    if (!c.isOpen) {
-        await c.connect();
-        logger_1.default.info('Connected to Redis');
+    try {
+        const c = createRedisClient();
+        if (!c.isOpen) {
+            await c.connect();
+            logger_1.default.info('Connected to Redis');
+        }
+    }
+    catch (error) {
+        logger_1.default.error('Failed to connect to Redis:', error);
+        // Don't throw - let the app continue without Redis
     }
 };
 exports.connectRedis = connectRedis;

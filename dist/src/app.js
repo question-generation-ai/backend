@@ -17,10 +17,16 @@ const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const yamljs_1 = __importDefault(require("yamljs"));
 const fs_1 = __importDefault(require("fs"));
 const app = (0, express_1.default)();
+// Trust proxy for Render deployment
+app.set('trust proxy', 1);
 // Middleware
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
-app.use((0, cors_1.default)({ origin: config_1.default.corsOrigin }));
+app.use((0, cors_1.default)({
+    origin: config_1.default.corsOrigin,
+    credentials: true,
+    exposedHeaders: ['Content-Disposition']
+}));
 app.use((0, helmet_1.default)());
 app.use((0, morgan_1.default)('dev'));
 // Connect to Redis if available
@@ -35,6 +41,14 @@ app.use((0, morgan_1.default)('dev'));
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
     res.status(200).json({ status: 'ok', env: config_1.default.env });
+});
+// Render ping endpoint to keep service active
+app.get('/ping', (req, res) => {
+    res.status(200).json({
+        status: 'pong',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
 });
 app.use('/api', rateLimiter_1.apiRateLimiter);
 app.use('/api/v1', v1_1.default);

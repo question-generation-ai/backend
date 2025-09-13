@@ -32,9 +32,6 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const question_service_1 = require("../../services/question.service");
@@ -42,14 +39,12 @@ const visualQuestionGenerator_service_1 = require("../../services/visualQuestion
 const pdf_service_1 = require("../../services/pdf.service");
 const zod_1 = require("zod");
 const validate_1 = require("../../middleware/validate");
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
 const router = (0, express_1.Router)();
 const generateSchema = zod_1.z.object({
     subject: zod_1.z.string(),
     chapter: zod_1.z.string(),
     difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
-    type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false']),
+    type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
     count: zod_1.z.number().min(1).max(10),
     concepts: zod_1.z.array(zod_1.z.string()).optional(),
     exclude_patterns: zod_1.z.array(zod_1.z.string()).optional(),
@@ -57,6 +52,7 @@ const generateSchema = zod_1.z.object({
     extraCommands: zod_1.z.string().optional(),
     enableVisuals: zod_1.z.boolean().optional(),
     title: zod_1.z.string().optional(),
+    provider: zod_1.z.enum(['gemini', 'openai']).optional(),
 });
 const bulkGenerateSchema = zod_1.z.object({
     requests: zod_1.z.array(generateSchema),
@@ -67,11 +63,53 @@ const feedbackSchema = zod_1.z.object({
     comments: zod_1.z.string().optional(),
     quality_issues: zod_1.z.array(zod_1.z.string()).optional(),
 });
+// A/B testing schema (same as generateSchema but without provider override)
+const abGenerateSchema = zod_1.z.object({
+    subject: zod_1.z.string(),
+    chapter: zod_1.z.string(),
+    difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
+    type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
+    count: zod_1.z.number().min(1).max(10),
+    concepts: zod_1.z.array(zod_1.z.string()).optional(),
+    exclude_patterns: zod_1.z.array(zod_1.z.string()).optional(),
+    classLevel: zod_1.z.string().optional(),
+    extraCommands: zod_1.z.string().optional(),
+    title: zod_1.z.string().optional(),
+});
+const abFeedbackSchema = zod_1.z.object({
+    selection: zod_1.z.enum(['gemini', 'openai']),
+    reason: zod_1.z.string().optional(),
+});
 router.post('/generate', (0, validate_1.validate)(generateSchema), async (req, res) => {
     try {
         const params = req.body;
-        const questions = await (0, question_service_1.generateQuestions)(params);
-        res.json({ questions });
+        const result = await (0, question_service_1.generateQuestions)(params);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// A/B generate: returns two sets, one from Gemini and one from OpenAI
+router.post('/ab-generate', (0, validate_1.validate)(abGenerateSchema), async (req, res) => {
+    try {
+        const baseParams = req.body;
+        const [gemini, openai] = await Promise.all([
+            (0, question_service_1.generateQuestions)({ ...baseParams, provider: 'gemini' }),
+            (0, question_service_1.generateQuestions)({ ...baseParams, provider: 'openai' }),
+        ]);
+        res.json({ gemini, openai });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// A/B feedback placeholder
+router.post('/ab-feedback', (0, validate_1.validate)(abFeedbackSchema), async (req, res) => {
+    try {
+        const { selection, reason } = req.body;
+        console.log('[AB Feedback]', { selection, reason });
+        res.json({ success: true });
     }
     catch (err) {
         res.status(500).json({ error: err.message });
@@ -154,29 +192,30 @@ router.put('/:id/feedback', (0, validate_1.validate)(feedbackSchema), async (req
 router.post('/generate-pdf', (0, validate_1.validate)(generateSchema), async (req, res) => {
     try {
         const params = req.body;
-        const { includeAnswers = false, includeExplanations = false } = req.body;
+        const { includeAnswers = false, includeExplanations = false, subject, chapter, difficulty, customTitle } = req.body;
         // Generate questions
         const result = await (0, question_service_1.generateQuestions)(params);
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
-        // Debug: Log the questions being passed to PDF
-        console.log('Questions for PDF:', questions);
-        console.log('Number of questions:', questions.length);
         // Generate PDF
-        const pdfFilename = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
-            title: `${params.subject} Questions - ${params.chapter}`,
-            subject: params.subject,
-            chapter: params.chapter,
-            difficulty: params.difficulty,
+        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+            title: `${subject} - ${chapter}`,
+            subject,
+            chapter,
+            difficulty,
             includeAnswers,
             includeExplanations,
-            customTitle: params.title,
+            customTitle
         });
-        res.json({
-            success: true,
-            pdfFilename,
-            downloadUrl: `/api/v1/questions/download-pdf/${pdfFilename}`,
-            questions: questions.length
-        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `questions_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
     }
     catch (err) {
         res.status(500).json({ error: err.message });
@@ -190,42 +229,36 @@ router.post('/generate-answer-key', (0, validate_1.validate)(generateSchema), as
         const result = await (0, question_service_1.generateQuestions)(params);
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
         // Generate answer key PDF
-        const pdfFilename = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
-            title: `${params.subject} Answer Key - ${params.chapter}`,
-            subject: params.subject,
-            chapter: params.chapter,
-            difficulty: params.difficulty,
-            customTitle: params.title,
+        const { subject, chapter, difficulty, customTitle } = req.body;
+        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+            title: `${subject} - ${chapter} - Answer Key`,
+            subject,
+            chapter,
+            difficulty,
+            customTitle: customTitle ? `${customTitle} - Answer Key` : undefined
         });
-        res.json({
-            success: true,
-            pdfFilename,
-            downloadUrl: `/api/v1/questions/download-pdf/${pdfFilename}`,
-            questions: questions.length
-        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `answer_key_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
     }
     catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
-// Download PDF file
+// Legacy download endpoint - no longer needed with direct streaming
+// Keeping for backward compatibility but will return 404
 router.get('/download-pdf/:filename', async (req, res) => {
-    try {
-        const { filename } = req.params;
-        const uploadsDir = path_1.default.join(__dirname, '../../../uploads');
-        const filepath = path_1.default.join(uploadsDir, filename);
-        // Check if file exists
-        if (!fs_1.default.existsSync(filepath)) {
-            return res.status(404).json({ error: 'PDF file not found' });
-        }
-        // Set headers for PDF download
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        // Send file
-        res.sendFile(filepath);
-    }
-    catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    console.log(`[Download] Legacy endpoint called - PDFs now stream directly`);
+    res.status(404).json({
+        error: 'File-based downloads no longer supported. PDFs are now streamed directly.',
+        message: 'Please regenerate your PDF to download.'
+    });
 });
 exports.default = router;

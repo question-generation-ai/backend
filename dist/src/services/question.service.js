@@ -12,49 +12,66 @@ const client_1 = require("@prisma/client");
 const ai_service_1 = require("./ai.service");
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = __importDefault(require("../utils/logger"));
+const openai_service_1 = require("./openai.service");
 const prisma = new client_1.PrismaClient();
+function getFormatInstructions(type) {
+    return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
+}
 function buildPrompt(params) {
+    var _a;
     const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
-    // Define subject-specific prompts
-    const subjectPrompts = {
-        'mathematics': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Mathematics Chapter: ${chapter}. Include step-by-step solutions and explanations. Focus on mathematical concepts, problem-solving strategies, and real-world applications.`,
-        'physics': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Physics Chapter: ${chapter}. Include scientific principles, formulas, calculations, and real-world applications. Focus on understanding physical concepts and problem-solving.`,
-        'chemistry': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Chemistry Chapter: ${chapter}. Include chemical reactions, molecular structures, calculations, and laboratory applications. Focus on chemical principles and practical understanding.`,
-        'biology': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Biology Chapter: ${chapter}. Include biological processes, cell structures, ecosystems, and scientific methodology. Focus on understanding living systems and scientific inquiry.`,
-        'english': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} English Chapter: ${chapter}. Include reading comprehension, grammar, vocabulary, literature analysis, and writing skills. Focus on language arts and communication.`,
-        'history': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} History Chapter: ${chapter}. Include historical events, timelines, cause-and-effect relationships, and critical analysis. Focus on understanding historical context and significance.`,
-        'geography': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Geography Chapter: ${chapter}. Include physical geography, human geography, maps, climate, and cultural aspects. Focus on spatial understanding and global awareness.`,
-        'politics': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Politics Chapter: ${chapter}. Include political systems, governance, civic engagement, and current affairs. Focus on understanding political processes and citizenship.`,
-        'economics': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Economics Chapter: ${chapter}. Include economic principles, market systems, financial literacy, and economic analysis. Focus on understanding economic concepts and decision-making.`,
-        'computer-science': `Create ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Computer Science Chapter: ${chapter}. Include programming concepts, algorithms, data structures, and computational thinking. Focus on logical reasoning and problem-solving.`,
-        'environmental-science': `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} Environmental Science Chapter: ${chapter}. Include environmental systems, sustainability, climate change, and ecological principles. Focus on environmental awareness and scientific understanding.`
+    const questionTypePrompts = {
+        'multiple-choice': 'multiple-choice questions with 4 options (A, B, C, D). Use plausible distractors and a single correct answer. Include why the correct option is right and others are wrong.',
+        'short-answer': 'short-answer questions requiring concise responses (2-4 sentences). Emphasize key concepts and clarity.',
+        'long-answer': 'long-answer questions requiring detailed explanations, structured arguments, and examples. Assess depth of understanding.',
+        'reasoning-based': 'questions that require step-by-step reasoning, justification, and showing the working process where applicable.',
+        'application-based': 'questions that apply theoretical concepts to real-world scenarios and practical problem contexts.',
+        'analytical': 'questions requiring comparison, evaluation, and critical analysis of data, arguments, or scenarios.',
+        'true-false': 'true/false questions with nuanced statements and detailed explanations for the truth value.',
+        'fill-in-the-blank': 'fill-in-the-blank questions targeting precise terminology or values; provide sufficient context.',
+        'case-study': 'case-study questions presenting a situation that requires analysis and solution recommendations.',
+        'problem-solving': 'multi-step problem-solving questions with methodical solution paths and alternative approaches where relevant.'
     };
-    // Get the specific prompt for the subject, or use default
-    const basePrompt = subjectPrompts[subject.toLowerCase()] ||
-        `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} ${subject} Chapter: ${chapter}. Include relevant concepts and explanations.`;
-    // Add common elements
+    // Enhanced subject-specific prompts
+    const subjectPrompts = {
+        'mathematics': `You are an expert mathematics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Mathematics on: ${chapter}. Emphasize conceptual understanding, mathematical reasoning, and real-world applications.`,
+        'physics': `You are an expert physics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Physics on: ${chapter}. Focus on physical laws, modeling, and problem-solving in realistic contexts.`,
+        'chemistry': `You are an expert chemistry educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Chemistry on: ${chapter}. Include reaction principles, structures, and calculations with clear reasoning.`,
+        'biology': `You are an expert biology educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Biology on: ${chapter}. Prioritize processes, systems thinking, and scientific inquiry.`,
+        'english': `You are an expert English educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} English on: ${chapter}. Emphasize comprehension, analysis, and communication skills.`,
+        'history': `You are an expert history educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} History on: ${chapter}. Emphasize causation, continuity and change, and source analysis.`,
+        'geography': `You are an expert geography educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Geography on: ${chapter}. Emphasize spatial reasoning, human-environment interactions, and map skills.`,
+        'politics': `You are an expert civics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Politics on: ${chapter}. Emphasize structures, processes, rights, and civic reasoning.`,
+        'economics': `You are an expert economics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Economics on: ${chapter}. Emphasize principles, decision-making, and data interpretation.`,
+        'computer-science': `You are an expert computer science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} CS on: ${chapter}. Emphasize algorithms, data structures, and computational thinking.`,
+        'environmental-science': `You are an expert environmental science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Env. Science on: ${chapter}. Emphasize systems, sustainability, and evidence-based reasoning.`
+    };
+    const basePrompt = subjectPrompts[((_a = subject === null || subject === void 0 ? void 0 : subject.toLowerCase) === null || _a === void 0 ? void 0 : _a.call(subject)) || ''] ||
+        `You are an expert educator in ${subject}. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
     let prompt = basePrompt;
     if (concepts && concepts.length > 0) {
-        prompt += ` Focus on concepts: ${concepts.join(', ')}.`;
+        prompt += ` Focus specifically on: ${concepts.join(', ')}.`;
     }
     if (exclude_patterns && exclude_patterns.length > 0) {
-        prompt += ` Avoid repetition of: ${exclude_patterns.join(', ')}.`;
+        prompt += ` Avoid: ${exclude_patterns.join(', ')}.`;
     }
-    // Add extra commands if provided
     if (extraCommands && extraCommands.trim()) {
         prompt += ` Additional instructions: ${extraCommands.trim()}.`;
     }
-    // Add format instructions
-    prompt += ` 
-
-IMPORTANT: Return ONLY valid JSON array without any markdown formatting, code blocks, or additional text. Each question should have: question, options (for multiple choice), correct_answer, explanation, difficulty_score.`;
+    const formatInstructions = getFormatInstructions(type);
+    prompt += `\n\n${formatInstructions}`;
     return prompt;
 }
 function parseAIResponse(aiResponse) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
-    // Try to extract questions from AI response (assume JSON in 'candidates[0].content.parts[0].text')
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+    // Try to extract questions from AI response (Gemini or OpenAI)
     try {
-        const text = (_e = (_d = (_c = (_b = (_a = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text;
+        // Gemini path
+        let text = (_e = (_d = (_c = (_b = (_a = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text;
+        // OpenAI chat.completions path
+        if (!text) {
+            text = (_h = (_g = (_f = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.choices) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.message) === null || _h === void 0 ? void 0 : _h.content;
+        }
         if (!text)
             throw new Error('No AI response text');
         // Log the response for debugging
@@ -132,7 +149,7 @@ function parseAIResponse(aiResponse) {
         console.log('Failed to parse AI response:', err);
         // If parsing fails, try to extract questions from the text
         try {
-            const text = (_k = (_j = (_h = (_g = (_f = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.candidates) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.content) === null || _h === void 0 ? void 0 : _h.parts) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.text;
+            const text = ((_o = (_m = (_l = (_k = (_j = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.candidates) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.content) === null || _l === void 0 ? void 0 : _l.parts) === null || _m === void 0 ? void 0 : _m[0]) === null || _o === void 0 ? void 0 : _o.text) || ((_r = (_q = (_p = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.choices) === null || _p === void 0 ? void 0 : _p[0]) === null || _q === void 0 ? void 0 : _q.message) === null || _r === void 0 ? void 0 : _r.content);
             if (text) {
                 // Try to extract the actual question content from the markdown
                 let questionText = text;
@@ -144,7 +161,7 @@ function parseAIResponse(aiResponse) {
                 }
                 return [{
                         question: questionText.substring(0, 200) + (questionText.length > 200 ? '...' : ''),
-                        answer: 'AI generated response',
+                        correct_answer: null,
                         explanation: 'This is an AI generated question',
                         difficulty_score: 2
                     }];
@@ -173,12 +190,25 @@ function generateMockQuestions(params) {
                 type
             });
         }
-        else if (type === 'short-answer') {
+        else if (type === 'short-answer' || type === 'long-answer' || type === 'reasoning-based' || type === 'application-based' || type === 'analytical' || type === 'case-study' || type === 'problem-solving') {
             questions.push({
                 id: `mock-${i}`,
-                question: `Explain ${chapter} in ${subject} (${difficulty} level).`,
-                answer: `Sample answer for question ${i}`,
+                question: `Explain a key concept of ${chapter} in ${subject} (${difficulty} level).`,
+                correct_answer: null,
                 explanation: `This is a sample explanation for question ${i}`,
+                difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+                subject,
+                chapter,
+                type
+            });
+        }
+        else if (type === 'fill-in-the-blank') {
+            questions.push({
+                id: `mock-${i}`,
+                question: `The concept of ______ is essential in ${chapter} (${subject}).`,
+                options: undefined,
+                correct_answer: 'sample term',
+                explanation: `The blank refers to a key term in ${chapter}.`,
                 difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
                 subject,
                 chapter,
@@ -218,13 +248,22 @@ async function generateQuestions(params) {
     // }
     logger_1.default.info(`Cache miss for key: ${cacheKey}`);
     try {
-        // Try AI service first
+        // Select provider
+        const provider = (params.provider || '').toLowerCase();
         const prompt = buildPrompt(params);
-        const aiResponse = await ai_service_1.GeminiAIService.generateContent(prompt);
+        let aiResponse;
+        let usedProvider = 'gemini';
+        if (provider === 'openai') {
+            aiResponse = await openai_service_1.OpenAIService.generateContent(prompt);
+            usedProvider = 'openai';
+        }
+        else {
+            // default to gemini
+            aiResponse = await ai_service_1.GeminiAIService.generateContent(prompt);
+            usedProvider = 'gemini';
+        }
         const questions = parseAIResponse(aiResponse);
-        // Cache result for 1 hour (temporarily disabled)
-        // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 3600 });
-        return { questions, metadata: { source: 'ai' }, cache_info: cacheInfo };
+        return { questions, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
     }
     catch (error) {
         logger_1.default.warn(`AI service failed, using mock data: ${error}`);

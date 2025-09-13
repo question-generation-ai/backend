@@ -14,6 +14,9 @@ import fs from 'fs';
 
 const app = express();
 
+// Trust proxy for Render deployment
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -37,6 +40,15 @@ app.use(morgan('dev'));
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ status: 'ok', env: config.env });
+});
+
+// Render ping endpoint to keep service active
+app.get('/ping', (req, res) => {
+  res.status(200).json({ 
+    status: 'pong', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 app.use('/api', apiRateLimiter);

@@ -24,8 +24,8 @@ const server = app_1.default
         }
     }, 60 * 60 * 1000); // 1 hour
     // Keep-alive ping (best effort): if SELF_PING_URL is set, ping it periodically to reduce idling
-    const selfPingUrl = process.env.SELF_PING_URL || `http://localhost:${PORT}/api/v1/health`;
-    const intervalMs = Number(process.env.SELF_PING_INTERVAL_MS || 10 * 60 * 1000); // 10 minutes default
+    const selfPingUrl = process.env.SELF_PING_URL || `http://localhost:${PORT}/api/v1/health`  || 'https://question-generator-backend-xr4z.onrender.com';
+    const intervalMs = Number(process.env.SELF_PING_INTERVAL_MS || 14 * 60 * 1000); // 10 minutes default
     setInterval(async () => {
         try {
             const res = await axios_1.default.get(selfPingUrl, { timeout: 5000 });
