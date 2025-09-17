@@ -246,6 +246,59 @@ function getCacheKey(params: any): string {
   return `questiongen:${hash}`;
 }
 
+async function saveQuestionsToDatabase(questions: any[], params: any): Promise<any[]> {
+  const savedQuestions = [];
+  
+  for (const question of questions) {
+    try {
+      // Skip if question has error
+      if (question.error) {
+        savedQuestions.push(question);
+        continue;
+      }
+
+      const savedQuestion = await prisma.question.create({
+        data: {
+          subject: params.subject || 'Unknown',
+          chapter: params.chapter || 'Unknown',
+          difficulty: params.difficulty || 'medium',
+          type: params.type || question.type || 'multiple-choice',
+          content: question.question || question.content || '',
+          answer: typeof question.correct_answer === 'string' 
+            ? question.correct_answer 
+            : JSON.stringify(question.correct_answer || null),
+          explanation: question.explanation || '',
+          metadata: {
+            options: question.options || null,
+            difficulty_score: question.difficulty_score || null,
+            provider: params.provider || 'gemini',
+            concepts: params.concepts || null,
+            classLevel: params.classLevel || null,
+            original_id: question.id || null
+          }
+        }
+      });
+
+      // Return the question with database ID
+      savedQuestions.push({
+        ...question,
+        id: savedQuestion.id,
+        database_id: savedQuestion.id,
+        created_at: savedQuestion.created_at
+      });
+    } catch (error) {
+      logger.error(`Failed to save question to database: ${error}`);
+      // Return original question if save fails
+      savedQuestions.push({
+        ...question,
+        save_error: 'Failed to save to database'
+      });
+    }
+  }
+  
+  return savedQuestions;
+}
+
 export async function generateQuestions(params: any) {
   const cacheKey = getCacheKey(params);
   let cacheInfo = { hit: false, key: cacheKey };
@@ -278,17 +331,28 @@ export async function generateQuestions(params: any) {
     }
 
     const questions = parseAIResponse(aiResponse);
-    return { questions, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
+    
+    // Save questions to database
+    const savedQuestions = await saveQuestionsToDatabase(questions, params);
+    
+    return { 
+      questions: savedQuestions, 
+      metadata: { source: 'ai', provider: usedProvider }, 
+      cache_info: cacheInfo 
+    };
   } catch (error) {
     logger.warn(`AI service failed, using mock data: ${error}`);
     
     // Fallback to mock data
     const questions = generateMockQuestions(params);
     
+    // Save mock questions to database as well
+    const savedQuestions = await saveQuestionsToDatabase(questions, params);
+    
     // Cache mock result for shorter time (5 minutes) (temporarily disabled)
     // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
     return { 
-      questions, 
+      questions: savedQuestions, 
       metadata: { 
         source: 'mock', 
         note: 'AI service unavailable, showing sample questions' 
@@ -316,4 +380,89 @@ export async function getQuestionTemplates() {
 export async function updateQuestionFeedback(id: string, feedback: any) {
   // Placeholder: In production, update feedback in DB
   return { success: true, updated_metrics: {} };
+}
+
+export async function generateMixedQuestions(params: any) {
+  const { questionTypes, ...baseParams } = params;
+  const allQuestions = [];
+  const metadata = { 
+    source: 'ai', 
+    providers: [] as string[], 
+    questionBreakdown: [] as Array<{type: string, count: number, requested: number}> 
+  };
+  
+  try {
+    // Generate questions for each type
+    for (const questionType of questionTypes) {
+      const typeParams = {
+        ...baseParams,
+        type: questionType.type,
+        count: questionType.count
+      };
+      
+      logger.info(`Generating ${questionType.count} ${questionType.type} questions`);
+      
+      const result = await generateQuestions(typeParams);
+      
+      if (result.questions && Array.isArray(result.questions)) {
+        // Add question type metadata to each question
+        const questionsWithType = result.questions.map(q => ({
+          ...q,
+          questionType: questionType.type,
+          sectionTitle: getQuestionTypeDisplayName(questionType.type)
+        }));
+        
+        allQuestions.push(...questionsWithType);
+        
+        // Track metadata
+        if (result.metadata?.provider) {
+          metadata.providers.push(result.metadata.provider);
+        }
+        
+        metadata.questionBreakdown.push({
+          type: questionType.type,
+          count: result.questions.length,
+          requested: questionType.count
+        });
+      }
+    }
+    
+    // Sort questions by type for better organization
+    allQuestions.sort((a, b) => {
+      const typeOrder = ['multiple-choice', 'true-false', 'fill-in-the-blank', 'short-answer', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'case-study', 'problem-solving'];
+      return typeOrder.indexOf(a.questionType) - typeOrder.indexOf(b.questionType);
+    });
+    
+    return {
+      questions: allQuestions,
+      metadata: {
+        ...metadata,
+        totalQuestions: allQuestions.length,
+        questionTypes: questionTypes.length,
+        mixed: true
+      },
+      cache_info: { hit: false, key: 'mixed-questions' }
+    };
+    
+  } catch (error) {
+    logger.error(`Mixed question generation failed: ${error}`);
+    throw new Error(`Failed to generate mixed questions: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
+function getQuestionTypeDisplayName(type: string): string {
+  const displayNames: { [key: string]: string } = {
+    'multiple-choice': 'Multiple Choice Questions',
+    'short-answer': 'Short Answer Questions',
+    'true-false': 'True/False Questions',
+    'long-answer': 'Long Answer Questions',
+    'reasoning-based': 'Reasoning-Based Questions',
+    'application-based': 'Application-Based Questions',
+    'analytical': 'Analytical Questions',
+    'fill-in-the-blank': 'Fill in the Blank Questions',
+    'case-study': 'Case Study Questions',
+    'problem-solving': 'Problem-Solving Questions'
+  };
+  
+  return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
 } 
