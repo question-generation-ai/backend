@@ -20,8 +20,9 @@ const app = (0, express_1.default)();
 // Trust proxy for Render deployment
 app.set('trust proxy', 1);
 // Middleware
-app.use(express_1.default.json());
-app.use(express_1.default.urlencoded({ extended: true }));
+// Increase body size limits to allow base64 images in questions when creating PDFs
+app.use(express_1.default.json({ limit: '50mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 app.use((0, cors_1.default)({
     origin: config_1.default.corsOrigin,
     credentials: true,

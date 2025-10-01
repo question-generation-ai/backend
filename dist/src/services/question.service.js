@@ -8,18 +8,27 @@ exports.searchQuestions = searchQuestions;
 exports.bulkGenerateQuestions = bulkGenerateQuestions;
 exports.getQuestionTemplates = getQuestionTemplates;
 exports.updateQuestionFeedback = updateQuestionFeedback;
+exports.generateMixedQuestions = generateMixedQuestions;
 const client_1 = require("@prisma/client");
 const ai_service_1 = require("./ai.service");
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const openai_service_1 = require("./openai.service");
+const imageGeneration_service_1 = require("./imageGeneration.service");
 const prisma = new client_1.PrismaClient();
 function getFormatInstructions(type) {
     return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
 }
 function buildPrompt(params) {
     var _a;
-    const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
+    const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands, syllabus } = params;
+    const difficultyKeywords = {
+        easy: 'easy (recall-based, straightforward)',
+        medium: 'medium (requires some analysis or application)',
+        hard: 'hard (complex, multi-step, or analytical)',
+    };
+    // @ts-ignore
+    const difficultyDesc = difficultyKeywords[difficulty] || difficulty;
     const questionTypePrompts = {
         'multiple-choice': 'multiple-choice questions with 4 options (A, B, C, D). Use plausible distractors and a single correct answer. Include why the correct option is right and others are wrong.',
         'short-answer': 'short-answer questions requiring concise responses (2-4 sentences). Emphasize key concepts and clarity.',
@@ -47,8 +56,11 @@ function buildPrompt(params) {
         'environmental-science': `You are an expert environmental science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Env. Science on: ${chapter}. Emphasize systems, sustainability, and evidence-based reasoning.`
     };
     const basePrompt = subjectPrompts[((_a = subject === null || subject === void 0 ? void 0 : subject.toLowerCase) === null || _a === void 0 ? void 0 : _a.call(subject)) || ''] ||
-        `You are an expert educator in ${subject}. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
+        `You are an expert educator in ${subject}. Create ${count} ${difficultyDesc} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
     let prompt = basePrompt;
+    if (syllabus && syllabus.topics && syllabus.topics.length > 0) {
+        prompt += ` The specific topics to cover are: ${syllabus.topics.join(', ')}.`;
+    }
     if (concepts && concepts.length > 0) {
         prompt += ` Focus specifically on: ${concepts.join(', ')}.`;
     }
@@ -61,6 +73,76 @@ function buildPrompt(params) {
     const formatInstructions = getFormatInstructions(type);
     prompt += `\n\n${formatInstructions}`;
     return prompt;
+}
+// Function to detect if a question needs an image
+function detectImageRequirement(question, subject) {
+    var _a;
+    const questionText = ((_a = question.question) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
+    // Keywords that typically require images
+    const imageKeywords = [
+        'diagram', 'chart', 'graph', 'figure', 'illustration', 'picture', 'image',
+        'draw', 'sketch', 'show', 'display', 'visualize', 'plot',
+        // Biology specific
+        'heart', 'brain', 'cell', 'organ', 'anatomy', 'structure', 'system',
+        'photosynthesis', 'respiration', 'circulation', 'digestive', 'nervous',
+        // Physics specific
+        'circuit', 'wave', 'force', 'vector', 'magnetic field', 'electric field',
+        'pendulum', 'lever', 'pulley', 'spring', 'oscillation',
+        // Chemistry specific
+        'molecule', 'atom', 'bond', 'reaction', 'compound', 'structure',
+        'periodic table', 'electron', 'orbital', 'crystal',
+        // Mathematics specific
+        'function', 'equation', 'coordinate', 'geometric', 'triangle', 'circle',
+        'parabola', 'sine', 'cosine', 'tangent', 'polygon'
+    ];
+    return imageKeywords.some(keyword => questionText.includes(keyword));
+}
+// Function to extract image description from question
+function extractImageDescription(question, subject) {
+    const questionText = question.question || '';
+    // Try to extract specific image requirements
+    const patterns = [
+        /(?:draw|sketch|show|display)\s+(?:a|an|the)?\s*([^.!?]+)/i,
+        /(?:diagram|chart|graph|figure|illustration)\s+(?:of|showing|depicting)?\s*([^.!?]+)/i,
+        /([^.!?]*(?:heart|brain|cell|organ|anatomy|structure|system|circuit|wave|molecule|atom|function|equation)[^.!?]*)/i
+    ];
+    for (const pattern of patterns) {
+        const match = questionText.match(pattern);
+        if (match && match[1]) {
+            return match[1].trim();
+        }
+    }
+    // Fallback: use the question text itself
+    return questionText;
+}
+// Function to process questions and add images where needed
+async function processQuestionsWithImages(questions, subject) {
+    const processedQuestions = [];
+    for (const question of questions) {
+        const processedQuestion = { ...question };
+        if (detectImageRequirement(question, subject)) {
+            try {
+                const imageDescription = extractImageDescription(question, subject);
+                logger_1.default.info(`Generating image for question: ${imageDescription.substring(0, 50)}...`);
+                const imageRequest = {
+                    questionContent: imageDescription,
+                    subject: subject.toLowerCase(),
+                    complexity: 'medium',
+                    preferredType: 'auto'
+                };
+                const imageResult = await imageGeneration_service_1.ImageGenerationService.generateQuestionImage(imageRequest);
+                processedQuestion.imageUrl = imageResult.imageUrl;
+                processedQuestion.imageMetadata = imageResult.metadata;
+                logger_1.default.info(`Image generated successfully for question`);
+            }
+            catch (error) {
+                logger_1.default.warn(`Failed to generate image for question: ${error.message}`);
+                // Continue without image
+            }
+        }
+        processedQuestions.push(processedQuestion);
+    }
+    return processedQuestions;
 }
 function parseAIResponse(aiResponse) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
@@ -236,6 +318,55 @@ function getCacheKey(params) {
     const hash = crypto_1.default.createHash('sha256').update(JSON.stringify({ ...params, timestamp })).digest('hex');
     return `questiongen:${hash}`;
 }
+async function saveQuestionsToDatabase(questions, params) {
+    const savedQuestions = [];
+    for (const question of questions) {
+        try {
+            // Skip if question has error
+            if (question.error) {
+                savedQuestions.push(question);
+                continue;
+            }
+            const savedQuestion = await prisma.question.create({
+                data: {
+                    subject: params.subject || 'Unknown',
+                    chapter: params.chapter || 'Unknown',
+                    difficulty: params.difficulty || 'medium',
+                    type: params.type || question.type || 'multiple-choice',
+                    content: question.question || question.content || '',
+                    answer: typeof question.correct_answer === 'string'
+                        ? question.correct_answer
+                        : JSON.stringify(question.correct_answer || null),
+                    explanation: question.explanation || '',
+                    metadata: {
+                        options: question.options || null,
+                        difficulty_score: question.difficulty_score || null,
+                        provider: params.provider || 'gemini',
+                        concepts: params.concepts || null,
+                        classLevel: params.classLevel || null,
+                        original_id: question.id || null
+                    }
+                }
+            });
+            // Return the question with database ID
+            savedQuestions.push({
+                ...question,
+                id: savedQuestion.id,
+                database_id: savedQuestion.id,
+                created_at: savedQuestion.created_at
+            });
+        }
+        catch (error) {
+            logger_1.default.error(`Failed to save question to database: ${error}`);
+            // Return original question if save fails
+            savedQuestions.push({
+                ...question,
+                save_error: 'Failed to save to database'
+            });
+        }
+    }
+    return savedQuestions;
+}
 async function generateQuestions(params) {
     const cacheKey = getCacheKey(params);
     let cacheInfo = { hit: false, key: cacheKey };
@@ -263,7 +394,9 @@ async function generateQuestions(params) {
             usedProvider = 'gemini';
         }
         const questions = parseAIResponse(aiResponse);
-        return { questions, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
+        // Process questions to add images where needed
+        const questionsWithImages = await processQuestionsWithImages(questions, params.subject);
+        return { questions: questionsWithImages, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
     }
     catch (error) {
         logger_1.default.warn(`AI service failed, using mock data: ${error}`);
@@ -296,4 +429,78 @@ async function getQuestionTemplates() {
 async function updateQuestionFeedback(id, feedback) {
     // Placeholder: In production, update feedback in DB
     return { success: true, updated_metrics: {} };
+}
+async function generateMixedQuestions(params) {
+    var _a;
+    const { questionTypes, ...baseParams } = params;
+    const allQuestions = [];
+    const metadata = {
+        source: 'ai',
+        providers: [],
+        questionBreakdown: []
+    };
+    try {
+        // Generate questions for each type
+        for (const questionType of questionTypes) {
+            const typeParams = {
+                ...baseParams,
+                type: questionType.type,
+                count: questionType.count
+            };
+            logger_1.default.info(`Generating ${questionType.count} ${questionType.type} questions`);
+            const result = await generateQuestions(typeParams);
+            if (result.questions && Array.isArray(result.questions)) {
+                // Add question type metadata to each question
+                const questionsWithType = result.questions.map(q => ({
+                    ...q,
+                    questionType: questionType.type,
+                    sectionTitle: getQuestionTypeDisplayName(questionType.type)
+                }));
+                allQuestions.push(...questionsWithType);
+                // Track metadata
+                if ((_a = result.metadata) === null || _a === void 0 ? void 0 : _a.provider) {
+                    metadata.providers.push(result.metadata.provider);
+                }
+                metadata.questionBreakdown.push({
+                    type: questionType.type,
+                    count: result.questions.length,
+                    requested: questionType.count
+                });
+            }
+        }
+        // Sort questions by type for better organization
+        allQuestions.sort((a, b) => {
+            const typeOrder = ['multiple-choice', 'true-false', 'fill-in-the-blank', 'short-answer', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'case-study', 'problem-solving'];
+            return typeOrder.indexOf(a.questionType) - typeOrder.indexOf(b.questionType);
+        });
+        return {
+            questions: allQuestions,
+            metadata: {
+                ...metadata,
+                totalQuestions: allQuestions.length,
+                questionTypes: questionTypes.length,
+                mixed: true
+            },
+            cache_info: { hit: false, key: 'mixed-questions' }
+        };
+    }
+    catch (error) {
+        logger_1.default.error(`Mixed question generation failed: ${error}`);
+        throw new Error(`Failed to generate mixed questions: ${error instanceof Error ? error.message : error}`);
+    }
+}
+function getQuestionTypeDisplayName(type) {
+    const displayNames = {
+        'multiple-choice': 'Multiple Choice Questions',
+        'short-answer': 'Short Answer Questions',
+        'true-false': 'True/False Questions',
+        'long-answer': 'Long Answer Questions',
+        'reasoning-based': 'Reasoning-Based Questions',
+        'application-based': 'Application-Based Questions',
+        'analytical': 'Analytical Questions',
+        'fill-in-the-blank': 'Fill in the Blank Questions',
+        'case-study': 'Case Study Questions',
+        'problem-solving': 'Problem-Solving Questions'
+    };
+    return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
 }

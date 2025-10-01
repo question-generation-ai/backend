@@ -18,8 +18,9 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase body size limits to allow base64 images in questions when creating PDFs
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors({ 
   origin: config.corsOrigin,
   credentials: true,

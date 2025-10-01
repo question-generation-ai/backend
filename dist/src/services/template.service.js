@@ -65,7 +65,9 @@ class TemplateService {
             const placeholder = `{{${key}}}`;
             processedSVG = processedSVG.replace(new RegExp(placeholder, 'g'), String(value));
         });
-        return processedSVG;
+        // Convert SVG to base64 data URL for proper display
+        const base64Svg = Buffer.from(processedSVG).toString('base64');
+        return `data:image/svg+xml;base64,${base64Svg}`;
     }
     // Canvas Template Processing (for mathematical graphs)
     static async processCanvasTemplate(canvasConfig, parameters) {

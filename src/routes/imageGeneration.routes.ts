@@ -124,4 +124,31 @@ router.get('/templates', ImageGenerationController.getTemplates);
  */
 router.post('/templates/:templateId/preview', ImageGenerationController.previewTemplate);
 
+// Test endpoint to verify image generation
+router.get('/test', async (req, res) => {
+  try {
+    const testRequest = {
+      questionContent: 'Draw a diagram of the human heart showing the four chambers',
+      subject: 'biology',
+      complexity: 'medium' as const,
+      preferredType: 'auto' as const
+    };
+
+    const { ImageGenerationService } = await import('../services/imageGeneration.service');
+    const result = await ImageGenerationService.generateQuestionImage(testRequest);
+    
+    res.json({
+      success: true,
+      message: 'Image generation test successful',
+      data: result
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: 'Image generation test failed',
+      message: error.message
+    });
+  }
+});
+
 export default router;

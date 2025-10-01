@@ -63,6 +63,19 @@ const feedbackSchema = zod_1.z.object({
     comments: zod_1.z.string().optional(),
     quality_issues: zod_1.z.array(zod_1.z.string()).optional(),
 });
+const mixedQuestionSchema = zod_1.z.object({
+    subject: zod_1.z.string(),
+    chapter: zod_1.z.string(),
+    difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
+    classLevel: zod_1.z.string().optional(),
+    extraCommands: zod_1.z.string().optional(),
+    title: zod_1.z.string().optional(),
+    provider: zod_1.z.enum(['gemini', 'openai']).optional(),
+    questionTypes: zod_1.z.array(zod_1.z.object({
+        type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
+        count: zod_1.z.number().min(1).max(10)
+    })).min(1)
+});
 // A/B testing schema (same as generateSchema but without provider override)
 const abGenerateSchema = zod_1.z.object({
     subject: zod_1.z.string(),
@@ -84,6 +97,18 @@ router.post('/generate', (0, validate_1.validate)(generateSchema), async (req, r
     try {
         const params = req.body;
         const result = await (0, question_service_1.generateQuestions)(params);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// Mixed question types generation
+router.post('/generate-mixed', (0, validate_1.validate)(mixedQuestionSchema), async (req, res) => {
+    try {
+        const params = req.body;
+        const { generateMixedQuestions } = await Promise.resolve().then(() => __importStar(require('../../services/question.service')));
+        const result = await generateMixedQuestions(params);
         res.json(result);
     }
     catch (err) {
@@ -188,6 +213,38 @@ router.put('/:id/feedback', (0, validate_1.validate)(feedbackSchema), async (req
         res.status(500).json({ error: err.message });
     }
 });
+// Create PDF from existing questions (no new generation)
+router.post('/create-pdf', async (req, res) => {
+    try {
+        const { questions, subject, chapter, difficulty, customTitle, includeAnswers = false, includeExplanations = false } = req.body;
+        if (!questions || !Array.isArray(questions) || questions.length === 0) {
+            return res.status(400).json({ error: 'Questions array is required' });
+        }
+        // Generate PDF from provided questions
+        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+            title: `${subject} - ${chapter}`,
+            subject,
+            chapter,
+            difficulty,
+            includeAnswers,
+            includeExplanations,
+            customTitle
+        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `questions_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[Create PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 // Generate PDF with questions
 router.post('/generate-pdf', (0, validate_1.validate)(generateSchema), async (req, res) => {
     try {
@@ -221,6 +278,36 @@ router.post('/generate-pdf', (0, validate_1.validate)(generateSchema), async (re
         res.status(500).json({ error: err.message });
     }
 });
+// Create answer key PDF from existing questions
+router.post('/create-answer-key', async (req, res) => {
+    try {
+        const { questions, subject, chapter, difficulty, customTitle } = req.body;
+        if (!questions || !Array.isArray(questions) || questions.length === 0) {
+            return res.status(400).json({ error: 'Questions array is required' });
+        }
+        // Generate answer key PDF from provided questions
+        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+            title: `${subject} - ${chapter} - Answer Key`,
+            subject,
+            chapter,
+            difficulty,
+            customTitle: customTitle ? `${customTitle} - Answer Key` : undefined
+        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `answer_key_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[Create Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 // Generate answer key PDF
 router.post('/generate-answer-key', (0, validate_1.validate)(generateSchema), async (req, res) => {
     try {
@@ -245,6 +332,72 @@ router.post('/generate-answer-key', (0, validate_1.validate)(generateSchema), as
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', pdfBuffer.length.toString());
         console.log(`[Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// Generate PDF with mixed question types
+router.post('/generate-mixed-pdf', (0, validate_1.validate)(mixedQuestionSchema), async (req, res) => {
+    try {
+        const params = req.body;
+        const { includeAnswers = false, includeExplanations = false, subject, chapter, difficulty, customTitle } = req.body;
+        // Generate mixed questions
+        const { generateMixedQuestions } = await Promise.resolve().then(() => __importStar(require('../../services/question.service')));
+        const result = await generateMixedQuestions(params);
+        const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
+        // Generate PDF
+        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+            title: customTitle || `${subject} - ${chapter} - Mixed Questions`,
+            subject,
+            chapter,
+            difficulty,
+            includeAnswers,
+            includeExplanations,
+            customTitle
+        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `mixed_questions_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[Mixed PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+        // Send PDF buffer directly
+        res.send(pdfBuffer);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// Generate answer key PDF for mixed questions
+router.post('/generate-mixed-answer-key', (0, validate_1.validate)(mixedQuestionSchema), async (req, res) => {
+    try {
+        const params = req.body;
+        // Generate mixed questions
+        const { generateMixedQuestions } = await Promise.resolve().then(() => __importStar(require('../../services/question.service')));
+        const result = await generateMixedQuestions(params);
+        const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
+        // Generate answer key PDF
+        const { subject, chapter, difficulty, customTitle } = req.body;
+        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+            title: `${subject} - ${chapter} - Mixed Questions Answer Key`,
+            subject,
+            chapter,
+            difficulty,
+            customTitle: customTitle ? `${customTitle} - Answer Key` : undefined
+        });
+        // Generate filename for download
+        const timestamp = Date.now();
+        const filename = `mixed_answer_key_${timestamp}.pdf`;
+        // Set headers for direct PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+        console.log(`[Mixed Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
         // Send PDF buffer directly
         res.send(pdfBuffer);
     }

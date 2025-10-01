@@ -2,7 +2,7 @@ import axios from 'axios';
 import logger from '../utils/logger';
 
 const OPENAI_API_URL = process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 export class OpenAIService {

@@ -12,6 +12,8 @@ export interface QuestionData {
   subject?: string;
   chapter?: string;
   type?: string;
+  imageUrl?: string;
+  imageMetadata?: any;
 }
 
 export interface PDFOptions {
@@ -25,6 +27,59 @@ export interface PDFOptions {
 }
 
 export class PDFService {
+  // Helper function to add image to PDF from base64 data URL
+  private static async addImageToPDF(doc: PDFKit.PDFDocument, imageUrl: string, maxWidth: number = 300, maxHeight: number = 200) {
+    try {
+      if (!imageUrl || !imageUrl.startsWith('data:image/')) {
+        return;
+      }
+
+      // Extract base64 data and format
+      const matches = imageUrl.match(/^data:image\/([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return;
+      }
+
+      const format = matches[1];
+      const base64Data = matches[2];
+      const rawBuffer = Buffer.from(base64Data, 'base64');
+
+      // Add image to PDF with size constraints
+      if (format === 'svg+xml') {
+        // Try to rasterize SVG into PNG using sharp if available
+        try {
+          const sharpMod = await import('sharp');
+          const sharp = (sharpMod as any).default || sharpMod;
+          const pngBuffer = await sharp(rawBuffer).png().toBuffer();
+          doc.image(pngBuffer, { fit: [maxWidth, maxHeight], align: 'center' });
+        } catch (svgErr) {
+          // Fallback placeholder if sharp is not installed or conversion fails
+          doc.fontSize(10)
+             .fillColor('#666')
+             .text('[SVG image omitted in PDF — install "sharp" to rasterize]', { align: 'center' });
+        }
+      } else {
+        // For PNG/JPEG images
+        doc.image(rawBuffer, { fit: [maxWidth, maxHeight], align: 'center' });
+      }
+    } catch (error) {
+      console.warn('Failed to add image to PDF:', error);
+      // Add placeholder text instead
+      doc.fontSize(10)
+         .fillColor('#666')
+         .text('[Image could not be displayed]', { align: 'center' });
+    }
+  }
+  // Ensure there is at least minHeight space remaining on the current page; if not, start a new page
+  private static ensureSpace(doc: PDFKit.PDFDocument, minHeight: number) {
+    const pageHeight = (doc as any).page.height;
+    const bottomMargin = (doc as any).page.margins.bottom || 50;
+    const currentY = (doc as any).y;
+    const remaining = pageHeight - bottomMargin - currentY;
+    if (remaining < minHeight) {
+      doc.addPage();
+    }
+  }
   static async generateQuestionPDF(
     questions: QuestionData[],
     options: PDFOptions = {}
@@ -49,17 +104,17 @@ export class PDFService {
     // Add custom title or default title
     const displayTitle = options.customTitle || options.title || 'Generated Questions';
     
-    // Add header with better styling
-    doc.fontSize(28)
+    // Add header with refined styling (smaller font)
+    doc.fontSize(22)
        .font('Helvetica-Bold')
        .fillColor('#1f2937')
        .text(displayTitle, { align: 'center' });
 
     doc.moveDown(1);
 
-    // Add metadata with better styling
+    // Add metadata with refined styling
     if (options.subject || options.chapter || options.difficulty) {
-      doc.fontSize(11)
+      doc.fontSize(10)
          .font('Helvetica')
          .fillColor('#6b7280')
          .text('Subject: ' + (options.subject || 'N/A'), { continued: true })
@@ -71,72 +126,70 @@ export class PDFService {
     doc.moveDown(1.5);
 
         // Add questions with clean, professional styling
-    questions.forEach((question, index) => {
+    for (const [index, question] of questions.entries()) {
+      // Ensure a reasonable space exists for a question block before starting
+      PDFService.ensureSpace(doc, 140);
       // Question number with better styling
-      doc.fontSize(16)
+      doc.fontSize(14)
          .font('Helvetica-Bold')
          .fillColor('#1f2937')
          .text(`Question ${index + 1}:`, { continued: true })
          .font('Helvetica')
-         .fontSize(13)
+         .fontSize(12)
          .fillColor('#374151')
          .text(' ' + question.question);
 
-      doc.moveDown(0.8);
+      doc.moveDown(0.5);
+
+      // Add image if available
+      if (question.imageUrl) {
+        await this.addImageToPDF(doc, question.imageUrl, 300, 200);
+        doc.moveDown(0.5);
+      }
 
       // Options (for multiple choice) with better formatting
       if (question.options && question.options.length > 0) {
-        doc.fontSize(12)
+        doc.fontSize(11)
            .font('Helvetica-Bold')
            .fillColor('#4b5563')
            .text('Options:');
 
         question.options.forEach((option, optIndex) => {
           const optionLabel = String.fromCharCode(65 + optIndex); // A, B, C, D...
-          doc.fontSize(11)
+          doc.fontSize(10)
              .font('Helvetica')
              .fillColor('#374151')
              .text(`${optionLabel}) ${option}`);
         });
-        doc.moveDown(0.8);
+        doc.moveDown(0.4);
       }
 
       // Only show answers if explicitly requested
       if (options.includeAnswers) {
-        doc.fontSize(11)
+        doc.fontSize(10)
            .font('Helvetica-Bold')
            .fillColor('#059669')
            .text('Answer: ', { continued: true })
            .font('Helvetica')
            .fillColor('#374151')
            .text(question.correct_answer || question.answer || 'N/A');
-        doc.moveDown(0.5);
+        doc.moveDown(0.4);
       }
 
       // Only show explanations if explicitly requested
       if (options.includeExplanations && question.explanation) {
-        doc.fontSize(11)
+        doc.fontSize(10)
            .font('Helvetica-Bold')
            .fillColor('#7c3aed')
            .text('Explanation: ', { continued: true })
            .font('Helvetica')
            .fillColor('#374151')
            .text(question.explanation);
-        doc.moveDown(0.5);
+        doc.moveDown(0.4);
       }
 
-      doc.moveDown(1.2);
-
-      // Add page break if needed (every 4 questions for better spacing)
-      if ((index + 1) % 4 === 0 && index < questions.length - 1) {
-        doc.addPage();
-      }
-    });
-
-    // Add footer
-    doc.fontSize(10)
-       .font('Helvetica-Oblique')
-       .text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.moveDown(0.8);
+    };
 
     // Finalize PDF
     doc.end();
@@ -175,31 +228,39 @@ export class PDFService {
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => console.log(`[PDF Service] Answer Key PDF generation completed`));
 
-    // Add header with better styling
+    // Add header with refined styling
     const answerKeyTitle = options.customTitle ? `${options.customTitle} - Answer Key` : 'Answer Key';
-    doc.fontSize(28)
+    doc.fontSize(22)
        .font('Helvetica-Bold')
-       .fillColor('#1f2937')
+        .fillColor('#1f2937')
        .text(answerKeyTitle, { align: 'center' });
 
     doc.moveDown(1.5);
 
     // Add questions with answers and better styling
-    questions.forEach((question, index) => {
+    for (const [index, question] of questions.entries()) {
+      // Ensure enough space before starting a block
+      PDFService.ensureSpace(doc, 140);
       // Question number and text with better styling
-      doc.fontSize(16)
+      doc.fontSize(14)
          .font('Helvetica-Bold')
          .fillColor('#1f2937')
          .text(`Question ${index + 1}:`, { continued: true })
          .font('Helvetica')
-         .fontSize(13)
+         .fontSize(12)
          .fillColor('#374151')
          .text(' ' + question.question);
 
-      doc.moveDown(0.8);
+      doc.moveDown(0.5);
+
+      // Add image if available
+      if (question.imageUrl) {
+        await this.addImageToPDF(doc, question.imageUrl, 300, 200);
+        doc.moveDown(0.5);
+      }
 
       // Answer with better styling
-      doc.fontSize(12)
+      doc.fontSize(11)
          .font('Helvetica-Bold')
          .fillColor('#059669')
          .text('Answer: ', { continued: true })
@@ -209,8 +270,8 @@ export class PDFService {
 
       // Explanation with better styling
       if (question.explanation) {
-        doc.moveDown(0.8);
-        doc.fontSize(11)
+        doc.moveDown(0.5);
+        doc.fontSize(10)
            .font('Helvetica-Bold')
            .fillColor('#7c3aed')
            .text('Explanation: ', { continued: true })
@@ -219,18 +280,8 @@ export class PDFService {
            .text(question.explanation);
       }
 
-      doc.moveDown(1.2);
-
-      // Add page break if needed (every 4 questions for better spacing)
-      if ((index + 1) % 4 === 0 && index < questions.length - 1) {
-        doc.addPage();
-      }
-    });
-
-    // Add footer
-    doc.fontSize(10)
-       .font('Helvetica-Oblique')
-       .text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.moveDown(0.8);
+    };
 
     // Finalize PDF
     doc.end();

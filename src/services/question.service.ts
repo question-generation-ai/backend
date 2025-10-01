@@ -4,6 +4,7 @@ import redisClient from '../utils/redisClient';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import { OpenAIService } from './openai.service';
+import { ImageGenerationService } from './imageGeneration.service';
 
 const prisma = new PrismaClient();
 
@@ -12,7 +13,16 @@ function getFormatInstructions(type: string): string {
 }
 
 function buildPrompt(params: any): string {
-  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
+  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands, syllabus } = params;
+
+  const difficultyKeywords = {
+    easy: 'easy (recall-based, straightforward)',
+    medium: 'medium (requires some analysis or application)',
+    hard: 'hard (complex, multi-step, or analytical)',
+  };
+
+  // @ts-ignore
+  const difficultyDesc = difficultyKeywords[difficulty] || difficulty;
   
   const questionTypePrompts: { [key: string]: string } = {
     'multiple-choice': 'multiple-choice questions with 4 options (A, B, C, D). Use plausible distractors and a single correct answer. Include why the correct option is right and others are wrong.',
@@ -43,9 +53,13 @@ function buildPrompt(params: any): string {
   };
 
   const basePrompt = subjectPrompts[subject?.toLowerCase?.() || ''] ||
-    `You are an expert educator in ${subject}. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
+    `You are an expert educator in ${subject}. Create ${count} ${difficultyDesc} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
 
   let prompt = basePrompt;
+
+  if (syllabus && syllabus.topics && syllabus.topics.length > 0) {
+    prompt += ` The specific topics to cover are: ${syllabus.topics.join(', ')}.`;
+  }
 
   if (concepts && concepts.length > 0) {
     prompt += ` Focus specifically on: ${concepts.join(', ')}.`;
@@ -61,6 +75,89 @@ function buildPrompt(params: any): string {
   prompt += `\n\n${formatInstructions}`;
 
   return prompt;
+}
+
+// Function to detect if a question needs an image
+function detectImageRequirement(question: any, subject: string): boolean {
+  const questionText = question.question?.toLowerCase() || '';
+  
+  // Keywords that typically require images
+  const imageKeywords = [
+    'diagram', 'chart', 'graph', 'figure', 'illustration', 'picture', 'image',
+    'draw', 'sketch', 'show', 'display', 'visualize', 'plot',
+    // Biology specific
+    'heart', 'brain', 'cell', 'organ', 'anatomy', 'structure', 'system',
+    'photosynthesis', 'respiration', 'circulation', 'digestive', 'nervous',
+    // Physics specific
+    'circuit', 'wave', 'force', 'vector', 'magnetic field', 'electric field',
+    'pendulum', 'lever', 'pulley', 'spring', 'oscillation',
+    // Chemistry specific
+    'molecule', 'atom', 'bond', 'reaction', 'compound', 'structure',
+    'periodic table', 'electron', 'orbital', 'crystal',
+    // Mathematics specific
+    'function', 'equation', 'coordinate', 'geometric', 'triangle', 'circle',
+    'parabola', 'sine', 'cosine', 'tangent', 'polygon'
+  ];
+  
+  return imageKeywords.some(keyword => questionText.includes(keyword));
+}
+
+// Function to extract image description from question
+function extractImageDescription(question: any, subject: string): string {
+  const questionText = question.question || '';
+  
+  // Try to extract specific image requirements
+  const patterns = [
+    /(?:draw|sketch|show|display)\s+(?:a|an|the)?\s*([^.!?]+)/i,
+    /(?:diagram|chart|graph|figure|illustration)\s+(?:of|showing|depicting)?\s*([^.!?]+)/i,
+    /([^.!?]*(?:heart|brain|cell|organ|anatomy|structure|system|circuit|wave|molecule|atom|function|equation)[^.!?]*)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = questionText.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  
+  // Fallback: use the question text itself
+  return questionText;
+}
+
+// Function to process questions and add images where needed
+async function processQuestionsWithImages(questions: any[], subject: string): Promise<any[]> {
+  const processedQuestions = [];
+  
+  for (const question of questions) {
+    const processedQuestion = { ...question };
+    
+    if (detectImageRequirement(question, subject)) {
+      try {
+        const imageDescription = extractImageDescription(question, subject);
+        logger.info(`Generating image for question: ${imageDescription.substring(0, 50)}...`);
+        
+        const imageRequest = {
+          questionContent: imageDescription,
+          subject: subject.toLowerCase(),
+          complexity: 'medium' as const,
+          preferredType: 'auto' as const
+        };
+        
+        const imageResult = await ImageGenerationService.generateQuestionImage(imageRequest);
+        processedQuestion.imageUrl = imageResult.imageUrl;
+        processedQuestion.imageMetadata = imageResult.metadata;
+        
+        logger.info(`Image generated successfully for question`);
+      } catch (error: any) {
+        logger.warn(`Failed to generate image for question: ${error.message}`);
+        // Continue without image
+      }
+    }
+    
+    processedQuestions.push(processedQuestion);
+  }
+  
+  return processedQuestions;
 }
 
 function parseAIResponse(aiResponse: any): any[] {
@@ -332,27 +429,20 @@ export async function generateQuestions(params: any) {
 
     const questions = parseAIResponse(aiResponse);
     
-    // Save questions to database
-    const savedQuestions = await saveQuestionsToDatabase(questions, params);
+    // Process questions to add images where needed
+    const questionsWithImages = await processQuestionsWithImages(questions, params.subject);
     
-    return { 
-      questions: savedQuestions, 
-      metadata: { source: 'ai', provider: usedProvider }, 
-      cache_info: cacheInfo 
-    };
+    return { questions: questionsWithImages, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
   } catch (error) {
     logger.warn(`AI service failed, using mock data: ${error}`);
     
     // Fallback to mock data
     const questions = generateMockQuestions(params);
     
-    // Save mock questions to database as well
-    const savedQuestions = await saveQuestionsToDatabase(questions, params);
-    
     // Cache mock result for shorter time (5 minutes) (temporarily disabled)
     // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
     return { 
-      questions: savedQuestions, 
+      questions, 
       metadata: { 
         source: 'mock', 
         note: 'AI service unavailable, showing sample questions' 

@@ -188,6 +188,44 @@ router.put('/:id/feedback', validate(feedbackSchema), async (req, res) => {
   }
 });
 
+// Create PDF from existing questions (no new generation)
+router.post('/create-pdf', async (req, res) => {
+  try {
+    const { questions, subject, chapter, difficulty, customTitle, includeAnswers = false, includeExplanations = false } = req.body;
+    
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: 'Questions array is required' });
+    }
+    
+    // Generate PDF from provided questions
+    const pdfBuffer = await PDFService.generateQuestionPDF(questions, {
+      title: `${subject} - ${chapter}`,
+      subject,
+      chapter,
+      difficulty,
+      includeAnswers,
+      includeExplanations,
+      customTitle
+    });
+
+    // Generate filename for download
+    const timestamp = Date.now();
+    const filename = `questions_${timestamp}.pdf`;
+
+    // Set headers for direct PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length.toString());
+    
+    console.log(`[Create PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+    
+    // Send PDF buffer directly
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Generate PDF with questions
 router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
   try {
@@ -219,6 +257,42 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
     res.setHeader('Content-Length', pdfBuffer.length.toString());
     
     console.log(`[PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
+    
+    // Send PDF buffer directly
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create answer key PDF from existing questions
+router.post('/create-answer-key', async (req, res) => {
+  try {
+    const { questions, subject, chapter, difficulty, customTitle } = req.body;
+    
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: 'Questions array is required' });
+    }
+    
+    // Generate answer key PDF from provided questions
+    const pdfBuffer = await PDFService.generateAnswerKeyPDF(questions, {
+      title: `${subject} - ${chapter} - Answer Key`,
+      subject,
+      chapter,
+      difficulty,
+      customTitle: customTitle ? `${customTitle} - Answer Key` : undefined
+    });
+
+    // Generate filename for download
+    const timestamp = Date.now();
+    const filename = `answer_key_${timestamp}.pdf`;
+
+    // Set headers for direct PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length.toString());
+    
+    console.log(`[Create Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
     
     // Send PDF buffer directly
     res.send(pdfBuffer);

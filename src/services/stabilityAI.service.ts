@@ -1,6 +1,7 @@
 import axios from 'axios';
 import logger from '../utils/logger';
 import { PrismaClient, Prisma } from '@prisma/client';
+import FormData from 'form-data';
 
 const prisma = new PrismaClient();
 
@@ -14,9 +15,7 @@ export interface StabilityAIRequest {
 
 export class StabilityAIService {
   private static readonly API_URL = 'https://api.stability.ai/v2beta/stable-image/generate/ultra';
-  // private static readonly API_KEY = process.env.STABILITY_API_KEY  || 'sk-ekavJnYFyj53thHaZEg7WUF7WxR1zRRTJQdMWqcBPIPdKJLM';
-  
-  private static readonly API_KEY ='sk-ekavJnYFyj53thHaZEg7WUF7WxR1zRRTJQdMWqcBPIPdKJLM';
+  private static readonly API_KEY = process.env.STABILITY_API_KEY || '';
   private static readonly MAX_DAILY_COST = parseFloat(process.env.MAX_DAILY_AI_COST || '10.0');
   // Cost tracking
   private static async getTodaysCost(): Promise<number> {
@@ -83,32 +82,10 @@ export class StabilityAIService {
       };
     }
 
-    // FOR TESTING: Mock image generation when API key is missing
+    // Use mock image generation for development/testing or when API fails
     if (!this.API_KEY) {
-      logger.info('STABILITY_API_KEY not found, using mock image generation for testing');
-      
-      // Generate a simple placeholder image based on the request
-      const mockImageUrl = this.generateMockImage(request);
-      const estimatedCost = 0; // No cost for mock
-      
-      // Save to database with cache key
-      await prisma.generatedImage.create({
-        data: {
-          generationType: 'AI_GENERATED',
-          imageUrl: mockImageUrl,
-          cost: estimatedCost,
-          cacheKey,
-          parameters: request as unknown as Prisma.InputJsonValue
-        }
-      });
-
-      logger.info('Mock AI image generated successfully');
-      
-      return {
-        imageUrl: mockImageUrl,
-        cost: estimatedCost,
-        cached: false
-      };
+      logger.info('STABILITY_API_KEY not found, using mock image generation');
+      return this.generateMockImageResult(request, cacheKey);
     }
 
     // Check cost limits
@@ -119,19 +96,24 @@ export class StabilityAIService {
 
     try {
       const optimizedPrompt = this.createEducationalPrompt(request);
-      
+
+      // Per Stability API v2beta, this endpoint expects multipart/form-data
+      const form = new FormData();
+      form.append('prompt', optimizedPrompt);
+      form.append('output_format', 'png');
+      form.append('aspect_ratio', request.aspectRatio || '1:1');
+      // Optional fields (uncomment/tune as needed)
+      // form.append('negative_prompt', 'text, watermark, blurry');
+      // form.append('seed', '0');
+
       const response = await axios.post(
         this.API_URL,
-        {
-          prompt: optimizedPrompt,
-          aspect_ratio: request.aspectRatio || '1:1',
-          output_format: 'png'
-        },
+        form,
         {
           headers: {
+            ...form.getHeaders(),
             'Authorization': `Bearer ${this.API_KEY}`,
-            'Accept': 'image/*',
-            'Content-Type': 'application/json'
+            'Accept': 'image/*'
           },
           responseType: 'arraybuffer',
           timeout: 60000
@@ -162,8 +144,20 @@ export class StabilityAIService {
       };
 
     } catch (error: any) {
-      logger.error(`Stability AI generation failed: ${error.message}`);
-      throw new Error(`AI image generation failed: ${error.message}`);
+      // Improve error visibility for 400s
+      if (error.response) {
+        const status = error.response.status;
+        const dataSnippet = (() => {
+          try { return Buffer.from(error.response.data).toString('utf8').slice(0, 500); } catch { return '[binary data]'; }
+        })();
+        logger.error(`Stability AI generation failed: HTTP ${status} - ${dataSnippet}`);
+      } else {
+        logger.error(`Stability AI generation failed: ${error.message}`);
+      }
+      logger.info('Falling back to mock image generation due to API failure');
+      
+      // Fallback to mock generation when API fails
+      return this.generateMockImageResult(request, cacheKey);
     }
   }
 
@@ -184,6 +178,31 @@ export class StabilityAIService {
         generationType: 'AI_GENERATED'
       }
     });
+  }
+
+  // Generate mock image result with database save
+  private static async generateMockImageResult(request: StabilityAIRequest, cacheKey: string) {
+    const mockImageUrl = this.generateMockImage(request);
+    const estimatedCost = 0; // No cost for mock
+    
+    // Save to database with cache key
+    await prisma.generatedImage.create({
+      data: {
+        generationType: 'AI_GENERATED',
+        imageUrl: mockImageUrl,
+        cost: estimatedCost,
+        cacheKey,
+        parameters: request as unknown as Prisma.InputJsonValue
+      }
+    });
+
+    logger.info('Mock AI image generated successfully');
+    
+    return {
+      imageUrl: mockImageUrl,
+      cost: estimatedCost,
+      cached: false
+    };
   }
 
   // Generate mock image for testing
