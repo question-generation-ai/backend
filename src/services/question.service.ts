@@ -434,20 +434,16 @@ export async function generateQuestions(params: any) {
     
     return { questions: questionsWithImages, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
   } catch (error) {
-    logger.warn(`AI service failed, using mock data: ${error}`);
-    
-    // Fallback to mock data
-    const questions = generateMockQuestions(params);
-    
-    // Cache mock result for shorter time (5 minutes) (temporarily disabled)
-    // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
-    return { 
-      questions, 
-      metadata: { 
-        source: 'mock', 
-        note: 'AI service unavailable, showing sample questions' 
-      }, 
-      cache_info: cacheInfo 
+    logger.warn(`AI service failed, not using mock data: ${error}`);
+    // Do NOT return mock questions. Surface explicit error so UI can show a professional message.
+    return {
+      questions: [],
+      metadata: {
+        source: 'error',
+        provider: (params.provider || 'gemini').toLowerCase(),
+        error: error instanceof Error ? error.message : String(error)
+      },
+      cache_info: cacheInfo
     };
   }
 }
