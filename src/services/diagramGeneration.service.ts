@@ -97,9 +97,10 @@ export class DiagramGenerationService {
       
       if (cached) {
         logger.info('Using cached diagram');
+        const params = cached.parameters as any;
         return {
           diagramUrl: cached.imageUrl,
-          toolUsed: cached.parameters?.toolUsed || 'draw.io',
+          toolUsed: params?.toolUsed || 'draw.io',
           cost: 0,
           cached: true,
           metadata: {

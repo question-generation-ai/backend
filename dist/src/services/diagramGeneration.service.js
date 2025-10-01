@@ -10,16 +10,16 @@ const prisma = new client_1.PrismaClient();
 class DiagramGenerationService {
     // Generate diagram based on request
     static async generateDiagram(request) {
-        var _a;
         try {
             // Check cache first
             const cacheKey = this.generateCacheKey(request);
             const cached = await this.getCachedDiagram(cacheKey);
             if (cached) {
                 logger_1.default.info('Using cached diagram');
+                const params = cached.parameters;
                 return {
                     diagramUrl: cached.imageUrl,
-                    toolUsed: ((_a = cached.parameters) === null || _a === void 0 ? void 0 : _a.toolUsed) || 'draw.io',
+                    toolUsed: (params === null || params === void 0 ? void 0 : params.toolUsed) || 'draw.io',
                     cost: 0,
                     cached: true,
                     metadata: {

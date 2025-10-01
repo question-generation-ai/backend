@@ -7,7 +7,7 @@ exports.GeminiAIService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const logger_1 = __importDefault(require("../utils/logger"));
 // Prefer the public Generative Language API with API Key. Vertex endpoints require a different auth flow.
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const RAW_GEMINI_API_URL = process.env.GEMINI_API_URL; // optional override
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyD3QHSw5ND0tkHzUztnDLmxI2C7su0B6ic';
 function isVertexUrl(url) {
@@ -22,7 +22,7 @@ function buildPublicEndpointWithVersion(model, version) {
 // Normalize model names to use versions supported by the Gemini API v1beta
 function normalizeModelName(model) {
     if (!model)
-        return 'gemini-1.5-flash-latest';
+        return 'gemini-2.0-flash';
     let m = model.trim().toLowerCase();
     // Strip any trailing :generateContent if provided mistakenly
     m = m.replace(/:generatecontent$/i, '');
@@ -33,20 +33,20 @@ function normalizeModelName(model) {
     }
     // Remove any leading publishers/google/ if present
     m = m.replace(/^publishers\/google\//, '');
-    // Map to available model names in v1beta API
-    // Using -latest suffix for stable auto-updating versions
-    if (m.includes('gemini-1.5-flash'))
-        return 'gemini-1.5-flash-latest';
-    if (m.includes('gemini-1.5-pro'))
-        return 'gemini-1.5-pro-latest';
-    if (m.includes('gemini-2.0-flash'))
-        return 'gemini-2.0-flash-exp';
+    // Map to available model names in v1beta API (as of October 2025)
+    // Using stable versions that actually exist
     if (m.includes('gemini-2.5-flash'))
-        return 'gemini-2.5-flash-preview-04-17';
+        return 'gemini-2.5-flash';
     if (m.includes('gemini-2.5-pro'))
-        return 'gemini-2.5-pro-preview-03-25';
-    // Default to the most stable and widely available model
-    return 'gemini-1.5-flash-latest';
+        return 'gemini-2.5-pro';
+    if (m.includes('gemini-2.0-flash'))
+        return 'gemini-2.0-flash';
+    if (m.includes('gemini-flash-latest'))
+        return 'gemini-flash-latest';
+    if (m.includes('gemini-pro-latest'))
+        return 'gemini-pro-latest';
+    // Default to stable 2.0 flash model
+    return 'gemini-2.0-flash';
 }
 class GeminiAIService {
     static async generateContent(prompt, maxRetries = 3) {
@@ -66,9 +66,8 @@ class GeminiAIService {
         // Prepare candidate endpoints with fallback models
         const candidateModels = [
             effectiveModel,
-            'gemini-1.5-flash-latest',
-            'gemini-1.5-pro-latest',
-            'gemini-1.5-flash-002'
+            'gemini-2.0-flash',
+            'gemini-flash-latest'
         ];
         const uniqueModels = Array.from(new Set(candidateModels));
         const candidateEndpoints = [];
