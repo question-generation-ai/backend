@@ -5,6 +5,9 @@ import crypto from 'crypto';
 import logger from '../utils/logger';
 import { OpenAIService } from './openai.service';
 import { ImageGenerationService } from './imageGeneration.service';
+import { EnhancedPromptsService } from './enhancedPrompts.service';
+import { QuestionValidatorService, ValidationResult } from './questionValidator.service';
+import { QualityMonitoringService } from './qualityMonitoring.service';
 
 const prisma = new PrismaClient();
 
@@ -12,69 +15,44 @@ function getFormatInstructions(type: string): string {
   return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
 }
 
+// Validate and filter questions using the validator service
+async function validateAndFilterQuestions(
+  questions: any[],
+  params: any
+): Promise<{
+  valid: any[];
+  invalid: any[];
+  validationResults: ValidationResult[];
+}> {
+  const valid: any[] = [];
+  const invalid: any[] = [];
+  const validationResults: ValidationResult[] = [];
+
+  for (const question of questions) {
+    try {
+      const validation = await QuestionValidatorService.validate(question, params.type);
+      validationResults.push(validation);
+      if (validation.isValid) {
+        question.validation = {
+          score: validation.score,
+          metrics: validation.metrics
+        };
+        valid.push(question);
+      } else {
+        logger.warn(`Question failed validation: ${QuestionValidatorService.getSummary(validation)}`);
+        invalid.push({ question, validation });
+      }
+    } catch (err) {
+      logger.warn(`Validation error: ${err}`);
+      invalid.push({ question, validation: { isValid: false, score: 0, issues: [{ severity: 'critical', category: 'Validation', message: 'Validator error', suggestion: 'Regenerate' }], metrics: { clarity: 0, difficulty: 0, pedagogicalValue: 0, technicalCorrectness: 0 } } as ValidationResult });
+    }
+  }
+
+  return { valid, invalid, validationResults };
+}
+
 function buildPrompt(params: any): string {
-  const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands, syllabus } = params;
-
-  const difficultyKeywords = {
-    easy: 'easy (recall-based, straightforward)',
-    medium: 'medium (requires some analysis or application)',
-    hard: 'hard (complex, multi-step, or analytical)',
-  };
-
-  // @ts-ignore
-  const difficultyDesc = difficultyKeywords[difficulty] || difficulty;
-  
-  const questionTypePrompts: { [key: string]: string } = {
-    'multiple-choice': 'multiple-choice questions with 4 options (A, B, C, D). Use plausible distractors and a single correct answer. Include why the correct option is right and others are wrong.',
-    'short-answer': 'short-answer questions requiring concise responses (2-4 sentences). Emphasize key concepts and clarity.',
-    'long-answer': 'long-answer questions requiring detailed explanations, structured arguments, and examples. Assess depth of understanding.',
-    'reasoning-based': 'questions that require step-by-step reasoning, justification, and showing the working process where applicable.',
-    'application-based': 'questions that apply theoretical concepts to real-world scenarios and practical problem contexts.',
-    'analytical': 'questions requiring comparison, evaluation, and critical analysis of data, arguments, or scenarios.',
-    'true-false': 'true/false questions with nuanced statements and detailed explanations for the truth value.',
-    'fill-in-the-blank': 'fill-in-the-blank questions targeting precise terminology or values; provide sufficient context.',
-    'case-study': 'case-study questions presenting a situation that requires analysis and solution recommendations.',
-    'problem-solving': 'multi-step problem-solving questions with methodical solution paths and alternative approaches where relevant.'
-  };
-
-  // Enhanced subject-specific prompts
-  const subjectPrompts: { [key: string]: string } = {
-    'mathematics': `You are an expert mathematics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Mathematics on: ${chapter}. Emphasize conceptual understanding, mathematical reasoning, and real-world applications.`,
-    'physics': `You are an expert physics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Physics on: ${chapter}. Focus on physical laws, modeling, and problem-solving in realistic contexts.`,
-    'chemistry': `You are an expert chemistry educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Chemistry on: ${chapter}. Include reaction principles, structures, and calculations with clear reasoning.`,
-    'biology': `You are an expert biology educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Biology on: ${chapter}. Prioritize processes, systems thinking, and scientific inquiry.`,
-    'english': `You are an expert English educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} English on: ${chapter}. Emphasize comprehension, analysis, and communication skills.`,
-    'history': `You are an expert history educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} History on: ${chapter}. Emphasize causation, continuity and change, and source analysis.`,
-    'geography': `You are an expert geography educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Geography on: ${chapter}. Emphasize spatial reasoning, human-environment interactions, and map skills.`,
-    'politics': `You are an expert civics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Politics on: ${chapter}. Emphasize structures, processes, rights, and civic reasoning.`,
-    'economics': `You are an expert economics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Economics on: ${chapter}. Emphasize principles, decision-making, and data interpretation.`,
-    'computer-science': `You are an expert computer science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} CS on: ${chapter}. Emphasize algorithms, data structures, and computational thinking.`,
-    'environmental-science': `You are an expert environmental science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Env. Science on: ${chapter}. Emphasize systems, sustainability, and evidence-based reasoning.`
-  };
-
-  const basePrompt = subjectPrompts[subject?.toLowerCase?.() || ''] ||
-    `You are an expert educator in ${subject}. Create ${count} ${difficultyDesc} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
-
-  let prompt = basePrompt;
-
-  if (syllabus && syllabus.topics && syllabus.topics.length > 0) {
-    prompt += ` The specific topics to cover are: ${syllabus.topics.join(', ')}.`;
-  }
-
-  if (concepts && concepts.length > 0) {
-    prompt += ` Focus specifically on: ${concepts.join(', ')}.`;
-  }
-  if (exclude_patterns && exclude_patterns.length > 0) {
-    prompt += ` Avoid: ${exclude_patterns.join(', ')}.`;
-  }
-  if (extraCommands && extraCommands.trim()) {
-    prompt += ` Additional instructions: ${extraCommands.trim()}.`;
-  }
-
-  const formatInstructions = getFormatInstructions(type);
-  prompt += `\n\n${formatInstructions}`;
-
-  return prompt;
+  return EnhancedPromptsService.buildCompletePrompt(params);
 }
 
 // Function to detect if a question needs an image
@@ -428,11 +406,45 @@ export async function generateQuestions(params: any) {
     }
 
     const questions = parseAIResponse(aiResponse);
-    
-    // Process questions to add images where needed
-    const questionsWithImages = await processQuestionsWithImages(questions, params.subject);
-    
-    return { questions: questionsWithImages, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
+
+    // Validate questions
+    const { valid, invalid, validationResults } = await validateAndFilterQuestions(questions, params);
+
+    logger.info(`Validation: ${valid.length} valid, ${invalid.length} invalid questions`);
+    if (invalid.length > questions.length * 0.3) {
+      logger.warn(`High validation failure rate: ${invalid.length}/${questions.length}`);
+      invalid.slice(0, 3).forEach((item: any, idx: number) => {
+        logger.warn(`Invalid Q${idx + 1}: ${QuestionValidatorService.getSummary(item.validation)}`);
+      });
+    }
+
+    // Track quality metrics
+    try {
+      await QualityMonitoringService.trackQuestionQuality(valid, validationResults);
+    } catch (e) {
+      logger.warn(`Quality monitoring failed: ${e}`);
+    }
+
+    // Process only valid questions to add images where needed
+    const questionsWithImages = await processQuestionsWithImages(valid, params.subject);
+
+    return {
+      questions: questionsWithImages,
+      metadata: {
+        source: 'ai',
+        provider: usedProvider,
+        validation: {
+          total: questions.length,
+          valid: valid.length,
+          invalid: invalid.length,
+          averageScore: validationResults.length > 0 ? validationResults.reduce((sum, v) => sum + v.score, 0) / validationResults.length : 0
+        }
+      },
+      cache_info: cacheInfo,
+      debug: {
+        invalidQuestions: invalid.slice(0, 3)
+      }
+    };
   } catch (error) {
     logger.warn(`AI service failed, not using mock data: ${error}`);
     // Do NOT return mock questions. Surface explicit error so UI can show a professional message.

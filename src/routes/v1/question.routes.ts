@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { validate } from '../../middleware/validate';
 import path from 'path';
 import fs from 'fs';
+import { QuestionValidatorService } from '../../services/questionValidator.service';
 
 const router = Router();
 
@@ -22,6 +23,32 @@ const generateSchema = z.object({
   enableVisuals: z.boolean().optional(),
   title: z.string().optional(),
   provider: z.enum(['gemini', 'openai']).optional(),
+});
+
+// Quality validation for a single question
+router.post('/validate-question', async (req, res) => {
+  try {
+    const { question, type } = req.body;
+
+    if (!question || !type) {
+      return res.status(400).json({
+        error: 'Question object and type are required'
+      });
+    }
+
+    const validation = await QuestionValidatorService.validate(question, type);
+
+    res.json({
+      success: true,
+      validation,
+      summary: QuestionValidatorService.getSummary(validation),
+      suggestions: validation.issues
+        .filter(i => i.severity === 'critical' || i.severity === 'warning')
+        .map(i => i.suggestion)
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const bulkGenerateSchema = z.object({
@@ -130,6 +157,51 @@ router.post('/bulk-generate', validate(bulkGenerateSchema), async (req, res) => 
     const { requests, batch_id } = req.body;
     const result = await bulkGenerateQuestions(requests, batch_id);
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Quality report for an array of questions
+router.post('/quality-report', async (req, res) => {
+  try {
+    const { questions, type } = req.body;
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({
+        error: 'Questions array is required'
+      });
+    }
+
+    const validations = await Promise.all(
+      questions.map(q => QuestionValidatorService.validate(q, type))
+    );
+
+    const report = {
+      totalQuestions: questions.length,
+      validQuestions: validations.filter(v => v.isValid).length,
+      invalidQuestions: validations.filter(v => !v.isValid).length,
+      averageScore: validations.reduce((sum, v) => sum + v.score, 0) / validations.length,
+      averageMetrics: {
+        clarity: validations.reduce((sum, v) => sum + v.metrics.clarity, 0) / validations.length,
+        pedagogicalValue: validations.reduce((sum, v) => sum + v.metrics.pedagogicalValue, 0) / validations.length,
+        technicalCorrectness: validations.reduce((sum, v) => sum + v.metrics.technicalCorrectness, 0) / validations.length
+      },
+      criticalIssues: validations.flatMap(v => v.issues.filter(i => i.severity === 'critical')).length,
+      warnings: validations.flatMap(v => v.issues.filter(i => i.severity === 'warning')).length,
+      detailedResults: validations.map((v, idx) => ({
+        questionNumber: idx + 1,
+        isValid: v.isValid,
+        score: v.score,
+        summary: QuestionValidatorService.getSummary(v),
+        topIssues: v.issues.slice(0, 3)
+      }))
+    };
+
+    res.json({
+      success: true,
+      report
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

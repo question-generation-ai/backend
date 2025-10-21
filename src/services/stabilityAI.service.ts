@@ -15,7 +15,7 @@ export interface StabilityAIRequest {
 
 export class StabilityAIService {
   private static readonly API_URL = 'https://api.stability.ai/v2beta/stable-image/generate/ultra';
-  private static readonly API_KEY = process.env.STABILITY_API_KEY || '';
+  private static readonly API_KEY = process.env.STABILITY_API_KEY || 'sk-ekavJnYFyj53thHaZEg7WUF7WxR1zRRTJQdMWqcBPIPdKJLM';
   private static readonly MAX_DAILY_COST = parseFloat(process.env.MAX_DAILY_AI_COST || '10.0');
   // Cost tracking
   private static async getTodaysCost(): Promise<number> {
