@@ -168,7 +168,7 @@ class VisualQuestionGenerator {
         }
         // Fallback to AI generation
         const aiResult = await imageGeneration_service_1.ImageGenerationService.generateQuestionImage({
-            questionContent: requirement.aiPrompt || questionText,
+            questionContent: questionText,
             subject,
             complexity: 'medium',
             preferredType: 'ai'

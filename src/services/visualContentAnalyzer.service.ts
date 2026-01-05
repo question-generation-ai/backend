@@ -9,7 +9,6 @@ export interface VisualContentRequirement {
   description: string;
   keywords: string[];
   templateSuggestion?: string;
-  aiPrompt?: string;
 }
 
 export interface SubjectAnalysisResult {
@@ -32,7 +31,7 @@ type SubjectPattern = {
 };
 
 export class VisualContentAnalyzer {
-  
+
   // Subject-specific visual content patterns
   private static readonly SUBJECT_PATTERNS: Record<string, SubjectPattern> = {
     mathematics: {
@@ -102,10 +101,10 @@ export class VisualContentAnalyzer {
     chapter: string,
     difficulty: string
   ): Promise<SubjectAnalysisResult> {
-    
+
     const subjectKey = subject.toLowerCase() as keyof typeof this.SUBJECT_PATTERNS;
     const patterns = this.SUBJECT_PATTERNS[subjectKey];
-    
+
     if (!patterns) {
       return {
         subject,
@@ -121,7 +120,7 @@ export class VisualContentAnalyzer {
 
     // Analyze content for visual patterns
     for (const [category, keywords] of Object.entries(patterns.keywords)) {
-      const matchedKeywords = keywords.filter(keyword => 
+      const matchedKeywords = keywords.filter(keyword =>
         contentLower.includes(keyword.toLowerCase())
       );
 
@@ -134,7 +133,6 @@ export class VisualContentAnalyzer {
             description: `${category} visualization for ${subject}`,
             keywords: matchedKeywords,
             templateSuggestion: visualType.template || undefined,
-            aiPrompt: this.generateAIPrompt(category, matchedKeywords, subject)
           });
         }
       }
@@ -160,14 +158,14 @@ export class VisualContentAnalyzer {
    */
   static identifyVisualContent(questionText: string, analysisResult: SubjectAnalysisResult): VisualContentRequirement[] {
     const identifiedContent: VisualContentRequirement[] = [];
-    
+
     // Look for explicit visual requests
     const visualIndicators = [
       'draw', 'sketch', 'diagram', 'graph', 'plot', 'illustrate', 'show', 'display',
       'figure', 'chart', 'table', 'image', 'picture', 'visual', 'represent'
     ];
 
-    const hasExplicitVisualRequest = visualIndicators.some(indicator => 
+    const hasExplicitVisualRequest = visualIndicators.some(indicator =>
       questionText.toLowerCase().includes(indicator)
     );
 
@@ -188,7 +186,6 @@ export class VisualContentAnalyzer {
           priority: 'essential',
           description: 'Custom illustration requested',
           keywords: this.extractKeywords(questionText),
-          aiPrompt: this.generateGenericAIPrompt(questionText, analysisResult.subject)
         });
       }
     } else {
@@ -208,7 +205,7 @@ export class VisualContentAnalyzer {
 
   private static determineComplexity(requirements: VisualContentRequirement[], difficulty: string): 'simple' | 'medium' | 'complex' {
     const essentialCount = requirements.filter(r => r.priority === 'essential').length;
-    
+
     if (difficulty === 'hard' || essentialCount > 2) return 'complex';
     if (difficulty === 'medium' || essentialCount > 0) return 'medium';
     return 'simple';
@@ -216,23 +213,11 @@ export class VisualContentAnalyzer {
 
   private static determineApproach(requirements: VisualContentRequirement[]): 'template' | 'ai' | 'hybrid' {
     const hasTemplates = requirements.some(r => r.templateSuggestion);
-    const needsAI = requirements.some(r => !r.templateSuggestion);
-    
-    if (hasTemplates && needsAI) return 'hybrid';
     if (hasTemplates) return 'template';
-    return 'ai';
+    return 'template'; // Default to template even if not explicit, as AI is removed
   }
 
-  private static generateAIPrompt(category: string, keywords: string[], subject: string): string {
-    return `Create an educational ${category} diagram for ${subject} focusing on: ${keywords.join(', ')}. 
-    Style: clean, educational, suitable for students, clear labels, professional appearance.`;
-  }
 
-  private static generateGenericAIPrompt(questionText: string, subject: string): string {
-    const keywords = this.extractKeywords(questionText);
-    return `Create an educational illustration for ${subject} question about: ${keywords.join(', ')}. 
-    Style: educational, clear, suitable for students, informative visual aid.`;
-  }
 
   private static extractKeywords(text: string): string[] {
     // Simple keyword extraction - in production, use NLP
@@ -241,7 +226,7 @@ export class VisualContentAnalyzer {
       .split(/\s+/)
       .filter(word => word.length > 3)
       .filter(word => !['question', 'answer', 'explain', 'describe', 'what', 'how', 'why', 'when', 'where'].includes(word));
-    
+
     return [...new Set(words)].slice(0, 5); // Top 5 unique keywords
   }
 }

@@ -124,6 +124,91 @@ router.get('/templates', ImageGenerationController.getTemplates);
  */
 router.post('/templates/:templateId/preview', ImageGenerationController.previewTemplate);
 
+// Health check endpoint for image generation system
+router.get('/health', async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    const diagnostics = {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      checks: {
+        database: { status: 'unknown' as string, details: {} },
+        templates: { status: 'unknown' as string, count: 0, active: 0 },
+        dependencies: { status: 'unknown' as string, packages: {} },
+        imageGeneration: { status: 'unknown' as string, test: null as any }
+      }
+    };
+
+    // Check database connection
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      diagnostics.checks.database.status = 'ok';
+    } catch (dbError: any) {
+      diagnostics.checks.database.status = 'error';
+      diagnostics.checks.database.details = { error: dbError.message };
+    }
+
+    // Check template count
+    try {
+      const templateCount = await prisma.template.count();
+      const activeTemplates = await prisma.template.count({ where: { isActive: true } });
+      diagnostics.checks.templates.status = templateCount > 0 ? 'ok' : 'warning';
+      diagnostics.checks.templates.count = templateCount;
+      diagnostics.checks.templates.active = activeTemplates;
+    } catch (templateError: any) {
+      diagnostics.checks.templates.status = 'error';
+      (diagnostics.checks.templates as any).error = templateError.message;
+    }
+
+    // Check dependencies
+    const deps: any = { sharp: false, canvas: false, katex: false, handlebars: false };
+    try { require('sharp'); deps.sharp = true; } catch { }
+    try { require('canvas'); deps.canvas = true; } catch { }
+    try { require('katex'); deps.katex = true; } catch { }
+    try { require('handlebars'); deps.handlebars = true; } catch { }
+
+    diagnostics.checks.dependencies.packages = deps;
+    diagnostics.checks.dependencies.status = deps.handlebars ? 'ok' : 'warning';
+
+    // Test image generation
+    try {
+      const { ImageGenerationService } = await import('../services/imageGeneration.service');
+      const testResult = await ImageGenerationService.generateQuestionImage({
+        questionContent: 'Test question for health check',
+        subject: 'mathematics',
+        complexity: 'simple'
+      });
+
+      diagnostics.checks.imageGeneration.status = testResult.imageUrl ? 'ok' : 'error';
+      diagnostics.checks.imageGeneration.test = {
+        generated: !!testResult.imageUrl,
+        type: testResult.generationType,
+        isFallback: testResult.metadata.fallback || false
+      };
+    } catch (genError: any) {
+      diagnostics.checks.imageGeneration.status = 'error';
+      (diagnostics.checks.imageGeneration as any).error = genError.message;
+    }
+
+    await prisma.$disconnect();
+
+    // Overall status
+    const allOk = Object.values(diagnostics.checks).every(check => check.status === 'ok');
+    (diagnostics as any).status = allOk ? 'healthy' : 'degraded';
+
+    res.json(diagnostics);
+
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Test endpoint to verify image generation
 router.get('/test', async (req, res) => {
   try {
@@ -136,7 +221,7 @@ router.get('/test', async (req, res) => {
 
     const { ImageGenerationService } = await import('../services/imageGeneration.service');
     const result = await ImageGenerationService.generateQuestionImage(testRequest);
-    
+
     res.json({
       success: true,
       message: 'Image generation test successful',

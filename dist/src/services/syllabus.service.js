@@ -810,6 +810,236 @@ const icseSyllabus = {
         ],
     },
     'class 12': {
+        'Mathematics': [
+            {
+                chapter: 'Relations and Functions',
+                topics: [
+                    'Types of relations - reflexive, symmetric, transitive',
+                    'Equivalence relations and partitions',
+                    'One-to-one and onto functions',
+                    'Composition of functions',
+                    'Inverse of a function',
+                    'Binary operations',
+                    'Principal values of inverse trigonometric functions',
+                    'Properties of inverse trigonometric functions'
+                ]
+            },
+            {
+                chapter: 'Algebra',
+                topics: [
+                    'Types of matrices',
+                    'Matrix operations - addition, multiplication',
+                    'Transpose of a matrix',
+                    'Symmetric and skew-symmetric matrices',
+                    'Determinant of a matrix',
+                    'Properties of determinants',
+                    'Minors and cofactors',
+                    'Adjoint and inverse of a matrix',
+                    'Solving linear equations using matrices',
+                    'Cramer\'s rule'
+                ]
+            },
+            {
+                chapter: 'Calculus',
+                topics: [
+                    'Continuity of functions',
+                    'Differentiability',
+                    'Differentiation of composite functions',
+                    'Chain rule',
+                    'Differentiation of implicit functions',
+                    'Differentiation of parametric functions',
+                    'Logarithmic differentiation',
+                    'Second order derivatives',
+                    'Rolle\'s and Lagrange\'s Mean Value Theorems',
+                    'Rate of change of quantities',
+                    'Increasing and decreasing functions',
+                    'Tangents and normals',
+                    'Maxima and minima',
+                    'Integration as inverse of differentiation',
+                    'Integration by substitution',
+                    'Integration by parts',
+                    'Integration by partial fractions',
+                    'Definite integrals and properties',
+                    'Fundamental theorem of calculus',
+                    'Area under curves',
+                    'Differential equations - order and degree',
+                    'General and particular solutions',
+                    'Variable separable method',
+                    'Homogeneous differential equations',
+                    'Linear differential equations'
+                ]
+            },
+            {
+                chapter: 'Vectors and 3D Geometry',
+                topics: [
+                    'Vectors and scalars',
+                    'Direction cosines and ratios',
+                    'Types of vectors',
+                    'Position vector',
+                    'Addition and multiplication of vectors',
+                    'Scalar (dot) product',
+                    'Vector (cross) product',
+                    'Triple products',
+                    'Cartesian equation of a line',
+                    'Vector equation of a line',
+                    'Angle between lines',
+                    'Shortest distance between lines',
+                    'Equation of a plane',
+                    'Angle between planes',
+                    'Distance of a point from a plane'
+                ]
+            },
+            {
+                chapter: 'Linear Programming',
+                topics: [
+                    'Linear programming problems (LPP)',
+                    'Objective function and constraints',
+                    'Feasible and infeasible regions',
+                    'Optimal solutions',
+                    'Graphical method for LPP'
+                ]
+            },
+            {
+                chapter: 'Probability',
+                topics: [
+                    'Conditional probability',
+                    'Multiplication theorem',
+                    'Independent events',
+                    'Bayes\' theorem',
+                    'Random variables',
+                    'Probability distributions',
+                    'Mean and variance of random variable',
+                    'Binomial distribution'
+                ]
+            }
+        ],
+        'Physics': [
+            {
+                chapter: 'Electrostatics',
+                topics: [
+                    'Electric charge and conservation',
+                    'Coulomb\'s law',
+                    'Electric field and field lines',
+                    'Electric dipole',
+                    'Electric flux',
+                    'Gauss\'s theorem and applications',
+                    'Electrostatic potential',
+                    'Potential due to point charge and dipole',
+                    'Equipotential surfaces',
+                    'Electrostatic potential energy',
+                    'Capacitors and capacitance',
+                    'Combination of capacitors',
+                    'Energy stored in capacitor'
+                ]
+            },
+            {
+                chapter: 'Current Electricity',
+                topics: [
+                    'Electric current and drift velocity',
+                    'Ohm\'s law and resistance',
+                    'Resistivity and conductivity',
+                    'Temperature dependence of resistance',
+                    'Combination of resistors',
+                    'EMF and internal resistance',
+                    'Kirchhoff\'s laws',
+                    'Wheatstone bridge',
+                    'Meter bridge',
+                    'Potentiometer'
+                ]
+            },
+            {
+                chapter: 'Magnetic Effects of Current and Magnetism',
+                topics: [
+                    'Biot-Savart\'s law',
+                    'Magnetic field due to current',
+                    'Ampere\'s circuital law',
+                    'Solenoid and toroid',
+                    'Force on current-carrying conductor',
+                    'Force between parallel currents',
+                    'Torque on current loop',
+                    'Moving coil galvanometer',
+                    'Bar magnet and magnetic field',
+                    'Earth\'s magnetic field',
+                    'Magnetic properties of materials'
+                ]
+            },
+            {
+                chapter: 'Electromagnetic Induction and AC',
+                topics: [
+                    'Faraday\'s laws of induction',
+                    'Lenz\'s law',
+                    'Motional EMF',
+                    'Eddy currents',
+                    'Self and mutual induction',
+                    'AC generator',
+                    'AC circuits - LCR',
+                    'Resonance',
+                    'Power in AC circuits',
+                    'Transformer'
+                ]
+            },
+            {
+                chapter: 'Electromagnetic Waves',
+                topics: [
+                    'Displacement current',
+                    'Electromagnetic spectrum',
+                    'Properties of EM waves'
+                ]
+            },
+            {
+                chapter: 'Optics',
+                topics: [
+                    'Reflection by spherical mirrors',
+                    'Refraction at plane surfaces',
+                    'Total internal reflection',
+                    'Refraction through prism',
+                    'Refraction at spherical surfaces',
+                    'Lens formula and lens maker\'s formula',
+                    'Combination of lenses',
+                    'Optical instruments',
+                    'Huygen\'s principle',
+                    'Interference - Young\'s double slit',
+                    'Diffraction at single slit',
+                    'Polarization'
+                ]
+            },
+            {
+                chapter: 'Dual Nature of Radiation and Matter',
+                topics: [
+                    'Photoelectric effect',
+                    'Einstein\'s photoelectric equation',
+                    'Matter waves',
+                    'de Broglie relation',
+                    'Davisson-Germer experiment'
+                ]
+            },
+            {
+                chapter: 'Atoms and Nuclei',
+                topics: [
+                    'Rutherford\'s atomic model',
+                    'Bohr\'s atomic model',
+                    'Hydrogen spectrum',
+                    'Nuclear composition',
+                    'Mass defect and binding energy',
+                    'Nuclear fission and fusion',
+                    'Nuclear reactor',
+                    'Radioactivity'
+                ]
+            },
+            {
+                chapter: 'Electronic Devices',
+                topics: [
+                    'Energy bands',
+                    'Intrinsic and extrinsic semiconductors',
+                    'p-n junction diode',
+                    'Diode as rectifier',
+                    'Zener diode',
+                    'LED and photodiode',
+                    'Solar cell',
+                    'Transistor - npn and pnp'
+                ]
+            }
+        ],
         'Biology': [
             {
                 chapter: 'Reproduction',
@@ -1035,124 +1265,6 @@ const icseSyllabus = {
                 ]
             }
         ],
-        'Physics': [
-            {
-                chapter: 'Electrostatics',
-                topics: [
-                    'Coulomb\'s law',
-                    'Electric field and field lines',
-                    'Electric dipole',
-                    'Gauss\'s theorem',
-                    'Electric potential and potential energy',
-                    'Equipotential surfaces',
-                    'Capacitance',
-                    'Combination of capacitors',
-                    'Energy stored in capacitor',
-                    'Dielectrics'
-                ]
-            },
-            {
-                chapter: 'Current Electricity',
-                topics: [
-                    'Electric current and drift velocity',
-                    'Ohm\'s law',
-                    'Resistance and resistivity',
-                    'Temperature dependence',
-                    'Internal resistance of cell',
-                    'Combination of cells',
-                    'Kirchhoff\'s laws',
-                    'Wheatstone bridge',
-                    'Metre bridge',
-                    'Potentiometer'
-                ]
-            },
-            {
-                chapter: 'Magnetic Effects of Current and Magnetism',
-                topics: [
-                    'Biot-Savart law',
-                    'Ampere\'s circuital law',
-                    'Force on moving charge',
-                    'Force on current-carrying conductor',
-                    'Torque on current loop',
-                    'Moving coil galvanometer',
-                    'Magnetic dipole',
-                    'Diamagnetic, paramagnetic, ferromagnetic',
-                    'Electromagnets'
-                ]
-            },
-            {
-                chapter: 'Electromagnetic Induction and AC',
-                topics: [
-                    'Faraday\'s laws',
-                    'Lenz\'s law',
-                    'Self and mutual induction',
-                    'Transformer',
-                    'AC generator',
-                    'RMS and peak values',
-                    'LCR circuits',
-                    'Resonance',
-                    'Power in AC circuits'
-                ]
-            },
-            {
-                chapter: 'Electromagnetic Waves',
-                topics: [
-                    'Displacement current',
-                    'Electromagnetic spectrum',
-                    'Properties of EM waves'
-                ]
-            },
-            {
-                chapter: 'Optics',
-                topics: [
-                    'Reflection by spherical mirrors',
-                    'Refraction at plane surfaces',
-                    'Total internal reflection',
-                    'Refraction through prism',
-                    'Refraction at spherical surfaces',
-                    'Lens formula and lens maker\'s formula',
-                    'Combination of lenses',
-                    'Optical instruments',
-                    'Huygen\'s principle',
-                    'Interference - Young\'s double slit',
-                    'Diffraction at single slit'
-                ]
-            },
-            {
-                chapter: 'Dual Nature of Radiation and Matter',
-                topics: [
-                    'Photoelectric effect',
-                    'Einstein\'s photoelectric equation',
-                    'Matter waves',
-                    'de Broglie relation',
-                    'Davisson-Germer experiment'
-                ]
-            },
-            {
-                chapter: 'Atoms and Nuclei',
-                topics: [
-                    'Rutherford\'s atomic model',
-                    'Bohr\'s atomic model',
-                    'Hydrogen spectrum',
-                    'Nuclear composition',
-                    'Mass defect and binding energy',
-                    'Nuclear fission and fusion',
-                    'Nuclear reactor'
-                ]
-            },
-            {
-                chapter: 'Electronic Devices',
-                topics: [
-                    'Energy bands',
-                    'Intrinsic and extrinsic semiconductors',
-                    'p-n junction diode',
-                    'Diode as rectifier',
-                    'Zener diode',
-                    'LED and photodiode',
-                    'Solar cell'
-                ]
-            }
-        ]
     }
 };
 class SyllabusService {

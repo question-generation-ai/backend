@@ -43,7 +43,7 @@ export interface VisualQuestionRequest {
 }
 
 export class VisualQuestionGenerator {
-  
+
   /**
    * Main workflow: Generate visually-rich educational questions
    */
@@ -77,11 +77,11 @@ export class VisualQuestionGenerator {
 
       // Step 2: Process each question for visual content
       const visualQuestions: VisualQuestion[] = [];
-      
+
       for (let i = 0; i < baseQuestions.length; i++) {
         const question = baseQuestions[i];
         const questionStartTime = Date.now();
-        
+
         try {
           // Step 3: Subject Analysis & Visual Content Identification
           const analysisResult = await VisualContentAnalyzer.analyzeVisualNeeds(
@@ -90,7 +90,7 @@ export class VisualQuestionGenerator {
             params.chapter,
             params.difficulty
           );
-          
+
           const visualRequirements = VisualContentAnalyzer.identifyVisualContent(
             question.question,
             analysisResult
@@ -104,9 +104,9 @@ export class VisualQuestionGenerator {
             generationType: 'template' | 'ai' | 'hybrid';
           } | undefined = undefined;
           if (params.enableVisuals !== false && visualRequirements.length > 0) {
-            const essentialRequirement = visualRequirements.find(r => r.priority === 'essential') || 
-                                       visualRequirements[0];
-            
+            const essentialRequirement = visualRequirements.find(r => r.priority === 'essential') ||
+              visualRequirements[0];
+
             if (essentialRequirement) {
               try {
                 const imageResult = await this.generateVisualContent(
@@ -114,18 +114,18 @@ export class VisualQuestionGenerator {
                   question.question,
                   params.subject
                 );
-                
+
                 visualContent = {
                   imageUrl: imageResult.imageUrl,
                   description: essentialRequirement.description,
                   type: essentialRequirement.type,
                   generationType: imageResult.generationType
                 };
-                
+
                 diagnostics.visualsGenerated++;
                 if (imageResult.generationType === 'template') diagnostics.templatesUsed++;
                 if (imageResult.generationType === 'ai') diagnostics.aiGenerations++;
-                
+
               } catch (visualError) {
                 logger.warn(`Visual generation failed for question ${i + 1}: ${visualError}`);
                 diagnostics.errors.push(`Visual generation failed: ${visualError}`);
@@ -135,7 +135,7 @@ export class VisualQuestionGenerator {
 
           // Step 5: Quality validation and integration
           const qualityScore = this.validateQuestionQuality(question, visualContent);
-          
+
           // Step 6: Final formatting
           const visualQuestion: VisualQuestion = {
             id: `vq-${Date.now()}-${i}`,
@@ -156,11 +156,11 @@ export class VisualQuestionGenerator {
           };
 
           visualQuestions.push(visualQuestion);
-          
+
         } catch (questionError) {
           logger.error(`Failed to process question ${i + 1}: ${questionError}`);
           diagnostics.errors.push(`Question ${i + 1} processing failed: ${questionError}`);
-          
+
           // Add question without visuals as fallback
           visualQuestions.push({
             id: `vq-fallback-${i}`,
@@ -201,7 +201,7 @@ export class VisualQuestionGenerator {
     } catch (error) {
       logger.error(`Visual question generation failed: ${error}`);
       diagnostics.errors.push(`Generation failed: ${error}`);
-      
+
       throw new Error(`Visual question generation failed: ${error}`);
     }
   }
@@ -211,9 +211,9 @@ export class VisualQuestionGenerator {
    */
   private static async generateVisualAwareQuestions(params: VisualQuestionRequest): Promise<any[]> {
     const visualPromptEnhancement = this.buildVisualPromptEnhancement(params.subject);
-    
+
     const prompt = this.buildVisualAwarePrompt(params, visualPromptEnhancement);
-    
+
     try {
       const aiResponse = await GeminiAIService.generateContent(prompt);
       return this.parseAIResponse(aiResponse);
@@ -231,7 +231,7 @@ export class VisualQuestionGenerator {
     questionText: string,
     subject: string
   ): Promise<{ imageUrl: string; generationType: 'template' | 'ai' | 'hybrid' }> {
-    
+
     // Try template first if suggested
     if (requirement.templateSuggestion) {
       try {
@@ -241,7 +241,7 @@ export class VisualQuestionGenerator {
           complexity: 'medium',
           preferredType: 'template'
         });
-        
+
         return {
           imageUrl: templateResult.imageUrl,
           generationType: templateResult.generationType as any
@@ -253,7 +253,7 @@ export class VisualQuestionGenerator {
 
     // Fallback to AI generation
     const aiResult = await ImageGenerationService.generateQuestionImage({
-      questionContent: requirement.aiPrompt || questionText,
+      questionContent: questionText,
       subject,
       complexity: 'medium',
       preferredType: 'ai'
@@ -270,7 +270,7 @@ export class VisualQuestionGenerator {
    */
   private static buildVisualAwarePrompt(params: VisualQuestionRequest, visualEnhancement: string): string {
     const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
-    
+
     const basePrompt = `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} ${subject} Chapter: ${chapter}.
 
 ${visualEnhancement}
@@ -280,11 +280,11 @@ Each question should be designed to work with visual aids like diagrams, graphs,
 Include step-by-step solutions and explanations that reference visual elements when relevant.`;
 
     let prompt = basePrompt;
-    
+
     if (concepts && concepts.length > 0) {
       prompt += ` Focus on concepts: ${concepts.join(', ')}.`;
     }
-    
+
     if (exclude_patterns && exclude_patterns.length > 0) {
       prompt += ` Avoid repetition of: ${exclude_patterns.join(', ')}.`;
     }
@@ -308,13 +308,13 @@ For questions that would benefit from visual aids, include phrases like "refer t
   private static buildVisualPromptEnhancement(subject: string): string {
     const enhancements: { [key: string]: string } = {
       mathematics: "Focus on questions that can be enhanced with graphs, coordinate systems, geometric diagrams, or mathematical visualizations. Include problems involving plotting functions, geometric constructions, or data representation.",
-      
+
       physics: "Emphasize questions that benefit from circuit diagrams, force diagrams, wave representations, or experimental setups. Include problems involving visual analysis of physical phenomena.",
-      
+
       chemistry: "Create questions that work well with molecular structures, reaction diagrams, periodic table references, or laboratory equipment illustrations. Focus on visual representation of chemical concepts.",
-      
+
       biology: "Generate questions that complement cell diagrams, anatomical illustrations, ecosystem charts, or process flowcharts. Include content that benefits from biological visualizations.",
-      
+
       default: "Create questions that can be enhanced with relevant diagrams, charts, or illustrations to improve student understanding and engagement."
     };
 
@@ -326,19 +326,19 @@ For questions that would benefit from visual aids, include phrases like "refer t
    */
   private static validateQuestionQuality(question: any, visualContent: any): number {
     let score = 0.5; // Base score
-    
+
     // Question quality factors
     if (question.question && question.question.length > 20) score += 0.1;
     if (question.explanation && question.explanation.length > 30) score += 0.1;
     if (question.correct_answer) score += 0.1;
-    
+
     // Visual content factors
     if (visualContent) {
       score += 0.2; // Has visual content
       if (visualContent.generationType === 'template') score += 0.05; // Template bonus
       if (visualContent.description) score += 0.05; // Has description
     }
-    
+
     return Math.min(score, 1.0);
   }
 
@@ -349,23 +349,23 @@ For questions that would benefit from visual aids, include phrases like "refer t
     try {
       const text = aiResponse?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error('No AI response text');
-      
+
       let cleanText = text;
-      
+
       if (cleanText.includes('```json')) {
         cleanText = cleanText.replace(/```json\s*/, '').replace(/\s*```$/, '');
       } else if (cleanText.includes('```')) {
         cleanText = cleanText.replace(/```\s*/, '').replace(/\s*```$/, '');
       }
-      
+
       cleanText = cleanText.trim();
-      
+
       const parsed = JSON.parse(cleanText);
-      
+
       if (Array.isArray(parsed)) return parsed;
       if (parsed.questions && Array.isArray(parsed.questions)) return parsed.questions;
       if (parsed.question) return [parsed];
-      
+
       return [parsed];
     } catch (err) {
       logger.error(`Failed to parse AI response: ${String(err)}`);
@@ -379,7 +379,7 @@ For questions that would benefit from visual aids, include phrases like "refer t
   private static generateEnhancedMockQuestions(params: VisualQuestionRequest): any[] {
     const { subject, chapter, difficulty, type, count } = params;
     const questions = [];
-    
+
     for (let i = 1; i <= count; i++) {
       if (type === 'multiple-choice') {
         questions.push({
@@ -398,7 +398,7 @@ For questions that would benefit from visual aids, include phrases like "refer t
         });
       }
     }
-    
+
     return questions;
   }
 }

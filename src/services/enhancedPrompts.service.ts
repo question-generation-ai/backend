@@ -1,4 +1,5 @@
 import logger from '../utils/logger';
+import { getCurriculumStandard, generateCurriculumPrompt, Board, ExamMode } from './curriculum.service';
 
 interface QuestionParams {
   subject: string;
@@ -8,6 +9,8 @@ interface QuestionParams {
   count: number;
   classLevel?: string;
   concepts?: string[];
+  board?: Board;
+  examMode?: ExamMode;
 }
 
 export class EnhancedPromptsService {
@@ -172,27 +175,64 @@ ${this.getDifficultyGuidelines(params.difficulty)}
   }
 
   /**
-   * Difficulty-specific guidelines
+   * Difficulty-specific guidelines with QUANTIFIABLE BOUNDARIES
    */
   private static getDifficultyGuidelines(difficulty: string): string {
     const guidelines: Record<string, string> = {
-      'easy': `- Single concept application
-- Direct recall or simple calculation
-- Minimal steps required (1-2 steps)
-- Common examples and familiar contexts
-- Clear and straightforward wording`,
+      'easy': `**EASY QUESTION REQUIREMENTS** (STRICT BOUNDARIES):
+📊 COMPLEXITY METRICS:
+- Solution steps: 1-3 steps MAXIMUM
+- Expected completion time: Under 5 minutes
+- Cognitive load: Uses single, basic concept only
 
-      'medium': `- Integration of 2-3 related concepts
-- Multi-step problem solving (3-5 steps)
-- Some analysis or interpretation required
+📚 PREREQUISITE KNOWLEDGE:
+- No prior knowledge needed beyond what's in the question
+- Question is completely self-contained
+- All necessary information provided directly
+
+✅ CHARACTERISTICS:
+- Direct recall or simple single-step calculation
+- Common examples and familiar contexts only
+- Clear and straightforward wording
+- No multi-concept integration
+- No unfamiliar terminology without definition`,
+
+      'medium': `**MEDIUM QUESTION REQUIREMENTS** (STRICT BOUNDARIES):
+📊 COMPLEXITY METRICS:
+- Solution steps: 4-7 steps required
+- Expected completion time: 10-20 minutes
+- Cognitive load: Combines 2-3 related concepts
+
+📚 PREREQUISITE KNOWLEDGE:
+- Assumes familiarity with basic concepts in the domain
+- Student should know foundational terminology
+- Standard topic knowledge expected
+
+✅ CHARACTERISTICS:
+- Multi-step problem solving required
+- Moderate analysis or interpretation needed
 - May include unfamiliar contexts requiring adaptation
-- Standard problem patterns with slight variations`,
+- Standard problem patterns with variations
+- Requires connecting ideas across a single topic`,
 
-      'hard': `- Integration of multiple concepts across topics
-- Complex multi-step reasoning (5+ steps)
-- Novel situations requiring creative application
-- May require recognizing patterns or making connections
-- Advanced vocabulary and abstract thinking required`
+      'hard': `**HARD QUESTION REQUIREMENTS** (STRICT BOUNDARIES):
+📊 COMPLEXITY METRICS:
+- Solution steps: 8+ steps required
+- Expected completion time: 30+ minutes
+- Cognitive load: Synthesizes multiple advanced concepts
+
+📚 PREREQUISITE KNOWLEDGE:
+- Requires deep understanding of the subject
+- Must synthesize multiple advanced concepts
+- Expect student to draw from extensive prior learning
+- Advanced vocabulary and abstract thinking required
+
+✅ CHARACTERISTICS:
+- Creative problem-solving or novel approaches needed
+- Competition-level difficulty (JEE/NEET/Olympiad style)
+- Integration of concepts across topics or subjects
+- May require recognizing hidden patterns
+- Only top 5-10% of students should solve independently`
     };
 
     return guidelines[difficulty] || guidelines['medium'];
@@ -387,6 +427,19 @@ This makes questions more relatable and meaningful for Indian students.`;
     prompt = this.addSubjectContext(prompt, params.subject);
     prompt = this.addTypeSpecificGuidance(prompt, params.type);
     prompt = this.addIndianContext(prompt, params.subject);
+
+    // Add curriculum standards enforcement (critical for proper difficulty)
+    const curriculumStandard = getCurriculumStandard(
+      params.classLevel || 'class 11',
+      params.subject,
+      params.board || 'icse',
+      params.examMode
+    );
+
+    if (curriculumStandard) {
+      prompt += generateCurriculumPrompt(curriculumStandard);
+      logger.info(`Applied ${curriculumStandard.board.toUpperCase()} curriculum standards for ${params.classLevel}`);
+    }
 
     logger.info(`Generated enhanced prompt for ${params.subject} - ${params.type}`);
     return prompt;

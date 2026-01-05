@@ -153,6 +153,99 @@ router.get('/templates', imageGeneration_controller_1.ImageGenerationController.
  *         description: Template preview generated
  */
 router.post('/templates/:templateId/preview', imageGeneration_controller_1.ImageGenerationController.previewTemplate);
+// Health check endpoint for image generation system
+router.get('/health', async (req, res) => {
+    try {
+        const { PrismaClient } = await Promise.resolve().then(() => __importStar(require('@prisma/client')));
+        const prisma = new PrismaClient();
+        const diagnostics = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            checks: {
+                database: { status: 'unknown', details: {} },
+                templates: { status: 'unknown', count: 0, active: 0 },
+                dependencies: { status: 'unknown', packages: {} },
+                imageGeneration: { status: 'unknown', test: null }
+            }
+        };
+        // Check database connection
+        try {
+            await prisma.$queryRaw `SELECT 1`;
+            diagnostics.checks.database.status = 'ok';
+        }
+        catch (dbError) {
+            diagnostics.checks.database.status = 'error';
+            diagnostics.checks.database.details = { error: dbError.message };
+        }
+        // Check template count
+        try {
+            const templateCount = await prisma.template.count();
+            const activeTemplates = await prisma.template.count({ where: { isActive: true } });
+            diagnostics.checks.templates.status = templateCount > 0 ? 'ok' : 'warning';
+            diagnostics.checks.templates.count = templateCount;
+            diagnostics.checks.templates.active = activeTemplates;
+        }
+        catch (templateError) {
+            diagnostics.checks.templates.status = 'error';
+            diagnostics.checks.templates.error = templateError.message;
+        }
+        // Check dependencies
+        const deps = { sharp: false, canvas: false, katex: false, handlebars: false };
+        try {
+            require('sharp');
+            deps.sharp = true;
+        }
+        catch (_a) { }
+        try {
+            require('canvas');
+            deps.canvas = true;
+        }
+        catch (_b) { }
+        try {
+            require('katex');
+            deps.katex = true;
+        }
+        catch (_c) { }
+        try {
+            require('handlebars');
+            deps.handlebars = true;
+        }
+        catch (_d) { }
+        diagnostics.checks.dependencies.packages = deps;
+        diagnostics.checks.dependencies.status = deps.handlebars ? 'ok' : 'warning';
+        // Test image generation
+        try {
+            const { ImageGenerationService } = await Promise.resolve().then(() => __importStar(require('../services/imageGeneration.service')));
+            const testResult = await ImageGenerationService.generateQuestionImage({
+                questionContent: 'Test question for health check',
+                subject: 'mathematics',
+                complexity: 'simple'
+            });
+            diagnostics.checks.imageGeneration.status = testResult.imageUrl ? 'ok' : 'error';
+            diagnostics.checks.imageGeneration.test = {
+                generated: !!testResult.imageUrl,
+                type: testResult.generationType,
+                isFallback: testResult.metadata.fallback || false
+            };
+        }
+        catch (genError) {
+            diagnostics.checks.imageGeneration.status = 'error';
+            diagnostics.checks.imageGeneration.error = genError.message;
+        }
+        await prisma.$disconnect();
+        // Overall status
+        const allOk = Object.values(diagnostics.checks).every(check => check.status === 'ok');
+        diagnostics.status = allOk ? 'healthy' : 'degraded';
+        res.json(diagnostics);
+    }
+    catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
 // Test endpoint to verify image generation
 router.get('/test', async (req, res) => {
     try {

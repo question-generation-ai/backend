@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { generateQuestions, searchQuestions, bulkGenerateQuestions, getQuestionTemplates, updateQuestionFeedback } from '../../services/question.service';
 import { VisualQuestionGenerator } from '../../services/visualQuestionGenerator.service';
-import { PDFService } from '../../services/pdf.service';
+import { HtmlPdfService } from '../../services/htmlPdf.service';
 import { z } from 'zod';
 import { validate } from '../../middleware/validate';
 import path from 'path';
@@ -15,7 +15,7 @@ const generateSchema = z.object({
   chapter: z.string(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-  count: z.number().min(1).max(10),
+  count: z.number().min(1).max(100),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
   classLevel: z.string().optional(),
@@ -72,7 +72,7 @@ const mixedQuestionSchema = z.object({
   provider: z.enum(['gemini', 'openai']).optional(),
   questionTypes: z.array(z.object({
     type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-    count: z.number().min(1).max(10)
+    count: z.number().min(1).max(100)
   })).min(1)
 });
 
@@ -82,7 +82,7 @@ const abGenerateSchema = z.object({
   chapter: z.string(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-  count: z.number().min(1).max(10),
+  count: z.number().min(1).max(100),
   concepts: z.array(z.string()).optional(),
   exclude_patterns: z.array(z.string()).optional(),
   classLevel: z.string().optional(),
@@ -264,13 +264,13 @@ router.put('/:id/feedback', validate(feedbackSchema), async (req, res) => {
 router.post('/create-pdf', async (req, res) => {
   try {
     const { questions, subject, chapter, difficulty, customTitle, includeAnswers = false, includeExplanations = false } = req.body;
-    
+
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Questions array is required' });
     }
-    
+
     // Generate PDF from provided questions
-    const pdfBuffer = await PDFService.generateQuestionPDF(questions, {
+    const pdfBuffer = await HtmlPdfService.generateQuestionPDF(questions, {
       title: `${subject} - ${chapter}`,
       subject,
       chapter,
@@ -288,9 +288,9 @@ router.post('/create-pdf', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[Create PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -303,13 +303,13 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
   try {
     const params = req.body;
     const { includeAnswers = false, includeExplanations = false, subject, chapter, difficulty, customTitle } = req.body;
-    
+
     // Generate questions
     const result = await generateQuestions(params);
     const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
-    
+
     // Generate PDF
-    const pdfBuffer = await PDFService.generateQuestionPDF(questions, {
+    const pdfBuffer = await HtmlPdfService.generateQuestionPDF(questions, {
       title: `${subject} - ${chapter}`,
       subject,
       chapter,
@@ -327,9 +327,9 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -341,13 +341,13 @@ router.post('/generate-pdf', validate(generateSchema), async (req, res) => {
 router.post('/create-answer-key', async (req, res) => {
   try {
     const { questions, subject, chapter, difficulty, customTitle } = req.body;
-    
+
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Questions array is required' });
     }
-    
+
     // Generate answer key PDF from provided questions
-    const pdfBuffer = await PDFService.generateAnswerKeyPDF(questions, {
+    const pdfBuffer = await HtmlPdfService.generateAnswerKeyPDF(questions, {
       title: `${subject} - ${chapter} - Answer Key`,
       subject,
       chapter,
@@ -363,9 +363,9 @@ router.post('/create-answer-key', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[Create Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -377,15 +377,15 @@ router.post('/create-answer-key', async (req, res) => {
 router.post('/generate-answer-key', validate(generateSchema), async (req, res) => {
   try {
     const params = req.body;
-    
+
     // Generate questions
     const result = await generateQuestions(params);
     const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
-    
+
     // Generate answer key PDF
     const { subject, chapter, difficulty, customTitle } = req.body;
-    
-    const pdfBuffer = await PDFService.generateAnswerKeyPDF(questions, {
+
+    const pdfBuffer = await HtmlPdfService.generateAnswerKeyPDF(questions, {
       title: `${subject} - ${chapter} - Answer Key`,
       subject,
       chapter,
@@ -401,9 +401,9 @@ router.post('/generate-answer-key', validate(generateSchema), async (req, res) =
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -416,14 +416,14 @@ router.post('/generate-mixed-pdf', validate(mixedQuestionSchema), async (req, re
   try {
     const params = req.body;
     const { includeAnswers = false, includeExplanations = false, subject, chapter, difficulty, customTitle } = req.body;
-    
+
     // Generate mixed questions
     const { generateMixedQuestions } = await import('../../services/question.service');
     const result = await generateMixedQuestions(params);
     const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
-    
+
     // Generate PDF
-    const pdfBuffer = await PDFService.generateQuestionPDF(questions, {
+    const pdfBuffer = await HtmlPdfService.generateQuestionPDF(questions, {
       title: customTitle || `${subject} - ${chapter} - Mixed Questions`,
       subject,
       chapter,
@@ -441,9 +441,9 @@ router.post('/generate-mixed-pdf', validate(mixedQuestionSchema), async (req, re
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[Mixed PDF Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -455,16 +455,16 @@ router.post('/generate-mixed-pdf', validate(mixedQuestionSchema), async (req, re
 router.post('/generate-mixed-answer-key', validate(mixedQuestionSchema), async (req, res) => {
   try {
     const params = req.body;
-    
+
     // Generate mixed questions
     const { generateMixedQuestions } = await import('../../services/question.service');
     const result = await generateMixedQuestions(params);
     const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
-    
+
     // Generate answer key PDF
     const { subject, chapter, difficulty, customTitle } = req.body;
-    
-    const pdfBuffer = await PDFService.generateAnswerKeyPDF(questions, {
+
+    const pdfBuffer = await HtmlPdfService.generateAnswerKeyPDF(questions, {
       title: `${subject} - ${chapter} - Mixed Questions Answer Key`,
       subject,
       chapter,
@@ -480,9 +480,9 @@ router.post('/generate-mixed-answer-key', validate(mixedQuestionSchema), async (
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length.toString());
-    
+
     console.log(`[Mixed Answer Key Route] Sending PDF directly - Size: ${pdfBuffer.length} bytes`);
-    
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (err: any) {
@@ -494,7 +494,7 @@ router.post('/generate-mixed-answer-key', validate(mixedQuestionSchema), async (
 // Keeping for backward compatibility but will return 404
 router.get('/download-pdf/:filename', async (req, res) => {
   console.log(`[Download] Legacy endpoint called - PDFs now stream directly`);
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'File-based downloads no longer supported. PDFs are now streamed directly.',
     message: 'Please regenerate your PDF to download.'
   });

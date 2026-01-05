@@ -15,96 +15,107 @@ const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const openai_service_1 = require("./openai.service");
 const imageGeneration_service_1 = require("./imageGeneration.service");
+const enhancedPrompts_service_1 = require("./enhancedPrompts.service");
+const questionValidator_service_1 = require("./questionValidator.service");
+const qualityMonitoring_service_1 = require("./qualityMonitoring.service");
 const prisma = new client_1.PrismaClient();
 function getFormatInstructions(type) {
     return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
 }
+// Validate and filter questions using the validator service
+async function validateAndFilterQuestions(questions, params) {
+    const valid = [];
+    const invalid = [];
+    const validationResults = [];
+    for (const question of questions) {
+        try {
+            const validation = await questionValidator_service_1.QuestionValidatorService.validate(question, params.type);
+            validationResults.push(validation);
+            if (validation.isValid) {
+                question.validation = {
+                    score: validation.score,
+                    metrics: validation.metrics
+                };
+                valid.push(question);
+            }
+            else {
+                logger_1.default.warn(`Question failed validation: ${questionValidator_service_1.QuestionValidatorService.getSummary(validation)}`);
+                invalid.push({ question, validation });
+            }
+        }
+        catch (err) {
+            logger_1.default.warn(`Validation error: ${err}`);
+            invalid.push({ question, validation: { isValid: false, score: 0, issues: [{ severity: 'critical', category: 'Validation', message: 'Validator error', suggestion: 'Regenerate' }], metrics: { clarity: 0, difficulty: 0, pedagogicalValue: 0, technicalCorrectness: 0 } } });
+        }
+    }
+    return { valid, invalid, validationResults };
+}
 function buildPrompt(params) {
-    var _a;
-    const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands, syllabus } = params;
-    const difficultyKeywords = {
-        easy: 'easy (recall-based, straightforward)',
-        medium: 'medium (requires some analysis or application)',
-        hard: 'hard (complex, multi-step, or analytical)',
-    };
-    // @ts-ignore
-    const difficultyDesc = difficultyKeywords[difficulty] || difficulty;
-    const questionTypePrompts = {
-        'multiple-choice': 'multiple-choice questions with 4 options (A, B, C, D). Use plausible distractors and a single correct answer. Include why the correct option is right and others are wrong.',
-        'short-answer': 'short-answer questions requiring concise responses (2-4 sentences). Emphasize key concepts and clarity.',
-        'long-answer': 'long-answer questions requiring detailed explanations, structured arguments, and examples. Assess depth of understanding.',
-        'reasoning-based': 'questions that require step-by-step reasoning, justification, and showing the working process where applicable.',
-        'application-based': 'questions that apply theoretical concepts to real-world scenarios and practical problem contexts.',
-        'analytical': 'questions requiring comparison, evaluation, and critical analysis of data, arguments, or scenarios.',
-        'true-false': 'true/false questions with nuanced statements and detailed explanations for the truth value.',
-        'fill-in-the-blank': 'fill-in-the-blank questions targeting precise terminology or values; provide sufficient context.',
-        'case-study': 'case-study questions presenting a situation that requires analysis and solution recommendations.',
-        'problem-solving': 'multi-step problem-solving questions with methodical solution paths and alternative approaches where relevant.'
-    };
-    // Enhanced subject-specific prompts
-    const subjectPrompts = {
-        'mathematics': `You are an expert mathematics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Mathematics on: ${chapter}. Emphasize conceptual understanding, mathematical reasoning, and real-world applications.`,
-        'physics': `You are an expert physics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Physics on: ${chapter}. Focus on physical laws, modeling, and problem-solving in realistic contexts.`,
-        'chemistry': `You are an expert chemistry educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Chemistry on: ${chapter}. Include reaction principles, structures, and calculations with clear reasoning.`,
-        'biology': `You are an expert biology educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Biology on: ${chapter}. Prioritize processes, systems thinking, and scientific inquiry.`,
-        'english': `You are an expert English educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} English on: ${chapter}. Emphasize comprehension, analysis, and communication skills.`,
-        'history': `You are an expert history educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} History on: ${chapter}. Emphasize causation, continuity and change, and source analysis.`,
-        'geography': `You are an expert geography educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Geography on: ${chapter}. Emphasize spatial reasoning, human-environment interactions, and map skills.`,
-        'politics': `You are an expert civics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Politics on: ${chapter}. Emphasize structures, processes, rights, and civic reasoning.`,
-        'economics': `You are an expert economics educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Economics on: ${chapter}. Emphasize principles, decision-making, and data interpretation.`,
-        'computer-science': `You are an expert computer science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} CS on: ${chapter}. Emphasize algorithms, data structures, and computational thinking.`,
-        'environmental-science': `You are an expert environmental science educator. Create ${count} ${difficulty} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} Env. Science on: ${chapter}. Emphasize systems, sustainability, and evidence-based reasoning.`
-    };
-    const basePrompt = subjectPrompts[((_a = subject === null || subject === void 0 ? void 0 : subject.toLowerCase) === null || _a === void 0 ? void 0 : _a.call(subject)) || ''] ||
-        `You are an expert educator in ${subject}. Create ${count} ${difficultyDesc} level ${questionTypePrompts[type] || type} for ${classLevel || 'high school'} ${subject} on: ${chapter}. Emphasize conceptual understanding and real-world application.`;
-    let prompt = basePrompt;
-    if (syllabus && syllabus.topics && syllabus.topics.length > 0) {
-        prompt += ` The specific topics to cover are: ${syllabus.topics.join(', ')}.`;
-    }
-    if (concepts && concepts.length > 0) {
-        prompt += ` Focus specifically on: ${concepts.join(', ')}.`;
-    }
-    if (exclude_patterns && exclude_patterns.length > 0) {
-        prompt += ` Avoid: ${exclude_patterns.join(', ')}.`;
-    }
-    if (extraCommands && extraCommands.trim()) {
-        prompt += ` Additional instructions: ${extraCommands.trim()}.`;
-    }
-    const formatInstructions = getFormatInstructions(type);
-    prompt += `\n\n${formatInstructions}`;
-    return prompt;
+    return enhancedPrompts_service_1.EnhancedPromptsService.buildCompletePrompt(params);
 }
 // Function to detect if a question needs an image
 function detectImageRequirement(question, subject) {
     var _a;
     const questionText = ((_a = question.question) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
-    // Keywords that typically require images
-    const imageKeywords = [
-        'diagram', 'chart', 'graph', 'figure', 'illustration', 'picture', 'image',
-        'draw', 'sketch', 'show', 'display', 'visualize', 'plot',
-        // Biology specific
-        'heart', 'brain', 'cell', 'organ', 'anatomy', 'structure', 'system',
-        'photosynthesis', 'respiration', 'circulation', 'digestive', 'nervous',
-        // Physics specific
-        'circuit', 'wave', 'force', 'vector', 'magnetic field', 'electric field',
-        'pendulum', 'lever', 'pulley', 'spring', 'oscillation',
-        // Chemistry specific
-        'molecule', 'atom', 'bond', 'reaction', 'compound', 'structure',
-        'periodic table', 'electron', 'orbital', 'crystal',
-        // Mathematics specific
-        'function', 'equation', 'coordinate', 'geometric', 'triangle', 'circle',
-        'parabola', 'sine', 'cosine', 'tangent', 'polygon'
+    // TIER 1: Explicit visual requests - always generate image
+    const explicitVisualPhrases = [
+        'refer to the diagram', 'refer to the figure', 'refer to the graph',
+        'as shown in the', 'in the figure', 'in the diagram', 'in the graph',
+        'draw a', 'sketch a', 'plot the', 'graph the',
+        'shown below', 'given diagram', 'given figure', 'given graph',
+        'from the diagram', 'from the figure', 'from the graph',
+        'observe the', 'look at the', 'using the diagram',
+        'label the', 'identify in the'
     ];
-    return imageKeywords.some(keyword => questionText.includes(keyword));
+    if (explicitVisualPhrases.some(phrase => questionText.includes(phrase))) {
+        return true;
+    }
+    // TIER 2: Subject-specific visual indicators (more restrictive)
+    const subjectVisualPatterns = {
+        physics: [
+            /circuit\s+diagram/i, /free\s*body\s*diagram/i, /force\s+diagram/i,
+            /ray\s+diagram/i, /wave\s+(?:diagram|pattern)/i,
+            /electric\s+field/i, /magnetic\s+field/i
+        ],
+        chemistry: [
+            /molecular\s+structure/i, /lewis\s+(?:dot\s+)?structure/i,
+            /benzene\s+ring/i, /(?:water|h2o)\s+molecule/i,
+            /orbital\s+diagram/i, /periodic\s+table/i,
+            /reaction\s+mechanism/i, /apparatus/i
+        ],
+        biology: [
+            /cell\s+(?:structure|diagram)/i, /anatomy\s+of/i,
+            /(?:digestive|nervous|circulatory)\s+system/i,
+            /cross\s*section/i, /(?:plant|animal)\s+cell/i,
+            /life\s+cycle/i, /food\s+chain/i, /food\s+web/i
+        ],
+        mathematics: [
+            /plot\s+(?:the\s+)?(?:function|graph|equation)/i,
+            /graph\s+of\s+(?:the\s+)?(?:function|equation)/i,
+            /coordinate\s+(?:system|plane|geometry)/i,
+            /geometric\s+(?:figure|shape|construction)/i,
+            /(?:right|isosceles|equilateral)\s+triangle/i,
+            /venn\s+diagram/i, /number\s+line/i,
+            /unit\s+circle/i, /parabola/i, /hyperbola/i, /ellipse/i
+        ]
+    };
+    const patterns = subjectVisualPatterns[subject.toLowerCase()] || [];
+    if (patterns.some(pattern => pattern.test(questionText))) {
+        return true;
+    }
+    // TIER 3: Avoid false positives - these words alone should NOT trigger images
+    // Words like "function", "equation", "structure" are too generic
+    // They need additional context to require an image
+    return false;
 }
 // Function to extract image description from question
 function extractImageDescription(question, subject) {
     const questionText = question.question || '';
-    // Try to extract specific image requirements
+    // Try to extract specific image requirements with context
     const patterns = [
-        /(?:draw|sketch|show|display)\s+(?:a|an|the)?\s*([^.!?]+)/i,
-        /(?:diagram|chart|graph|figure|illustration)\s+(?:of|showing|depicting)?\s*([^.!?]+)/i,
-        /([^.!?]*(?:heart|brain|cell|organ|anatomy|structure|system|circuit|wave|molecule|atom|function|equation)[^.!?]*)/i
+        /(?:draw|sketch|plot|graph)\s+(?:a|an|the)?\s*([^.!?]{10,60})/i,
+        /(?:diagram|figure|graph|illustration)\s+(?:of|showing|depicting)\s+([^.!?]{10,60})/i,
+        /refer\s+to\s+the\s+(\w+(?:\s+\w+){0,5})/i
     ];
     for (const pattern of patterns) {
         const match = questionText.match(pattern);
@@ -112,8 +123,9 @@ function extractImageDescription(question, subject) {
             return match[1].trim();
         }
     }
-    // Fallback: use the question text itself
-    return questionText;
+    // Fallback: extract the main subject of the question
+    const firstSentence = questionText.split(/[.!?]/)[0] || '';
+    return firstSentence.substring(0, 100);
 }
 // Function to process questions and add images where needed
 async function processQuestionsWithImages(questions, subject) {
@@ -143,6 +155,45 @@ async function processQuestionsWithImages(questions, subject) {
         processedQuestions.push(processedQuestion);
     }
     return processedQuestions;
+}
+// Sanitize LaTeX backslashes that break JSON parsing
+// The AI returns LaTeX like \frac, \sqrt, \cup which JSON.parse treats as invalid escapes
+function sanitizeLatexForJson(jsonString) {
+    // Common LaTeX commands that break JSON parsing
+    // These start with \ followed by a letter that's not a valid JSON escape
+    // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+    // Replace single backslashes with double backslashes, but only inside strings
+    // This is a simplified approach that handles most cases
+    let result = '';
+    let inString = false;
+    let i = 0;
+    while (i < jsonString.length) {
+        const char = jsonString[i];
+        if (char === '"' && (i === 0 || jsonString[i - 1] !== '\\')) {
+            inString = !inString;
+            result += char;
+            i++;
+        }
+        else if (inString && char === '\\') {
+            // Check what follows the backslash
+            const nextChar = jsonString[i + 1];
+            // Valid JSON escapes
+            if (nextChar && ['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'].includes(nextChar)) {
+                result += char;
+                i++;
+            }
+            else {
+                // LaTeX command - double the backslash to make it valid JSON
+                result += '\\\\';
+                i++;
+            }
+        }
+        else {
+            result += char;
+            i++;
+        }
+    }
+    return result;
 }
 function parseAIResponse(aiResponse) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
@@ -212,6 +263,9 @@ function parseAIResponse(aiResponse) {
             }
         }
         console.log('Cleaned text:', cleanText);
+        // Sanitize LaTeX backslashes that break JSON parsing
+        // LaTeX commands like \frac, \sqrt, \cup need double-escaping in JSON
+        cleanText = sanitizeLatexForJson(cleanText);
         // Try to parse as JSON
         const parsed = JSON.parse(cleanText);
         // Handle different response formats
@@ -367,7 +421,8 @@ async function saveQuestionsToDatabase(questions, params) {
     }
     return savedQuestions;
 }
-async function generateQuestions(params) {
+async function generateQuestions(params, retryCount = 0) {
+    const MAX_RETRIES = 2;
     const cacheKey = getCacheKey(params);
     let cacheInfo = { hit: false, key: cacheKey };
     // Temporarily disable caching to ensure fresh responses
@@ -381,7 +436,13 @@ async function generateQuestions(params) {
     try {
         // Select provider
         const provider = (params.provider || '').toLowerCase();
-        const prompt = buildPrompt(params);
+        let prompt = buildPrompt(params);
+        // If this is a retry, add specific instructions to fix previous issues
+        if (retryCount > 0 && params._previousIssues) {
+            const retryInstructions = buildRetryInstructions(params._previousIssues);
+            prompt = prompt + '\n\n' + retryInstructions;
+            logger_1.default.info(`Retry ${retryCount}/${MAX_RETRIES}: Adding correction instructions`);
+        }
         let aiResponse;
         let usedProvider = 'gemini';
         if (provider === 'openai') {
@@ -394,25 +455,161 @@ async function generateQuestions(params) {
             usedProvider = 'gemini';
         }
         const questions = parseAIResponse(aiResponse);
-        // Process questions to add images where needed
-        const questionsWithImages = await processQuestionsWithImages(questions, params.subject);
-        return { questions: questionsWithImages, metadata: { source: 'ai', provider: usedProvider }, cache_info: cacheInfo };
+        // Check if parsing failed
+        if (questions.length === 0 || (questions.length === 1 && questions[0].error)) {
+            logger_1.default.warn('AI response parsing failed');
+            if (retryCount < MAX_RETRIES) {
+                logger_1.default.info(`Retrying question generation due to parse failure (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                return generateQuestions({
+                    ...params,
+                    _previousIssues: ['Response was not valid JSON', 'Ensure output is a valid JSON array']
+                }, retryCount + 1);
+            }
+            return {
+                questions: [],
+                metadata: {
+                    source: 'error',
+                    provider: usedProvider,
+                    error: 'Failed to parse AI response after retries'
+                },
+                cache_info: cacheInfo
+            };
+        }
+        // Validate questions
+        const { valid, invalid, validationResults } = await validateAndFilterQuestions(questions, params);
+        logger_1.default.info(`Validation: ${valid.length} valid, ${invalid.length} invalid questions`);
+        // If all questions failed validation and we have retries left, regenerate
+        if (valid.length === 0 && invalid.length > 0 && retryCount < MAX_RETRIES) {
+            const issues = extractValidationIssues(invalid);
+            logger_1.default.info(`All questions failed validation. Retrying with corrections (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            return generateQuestions({
+                ...params,
+                _previousIssues: issues
+            }, retryCount + 1);
+        }
+        // If high failure rate (>50%) and we have retries left, regenerate the failed portion
+        if (invalid.length > questions.length * 0.5 && retryCount < MAX_RETRIES) {
+            const issues = extractValidationIssues(invalid);
+            logger_1.default.warn(`High validation failure rate: ${invalid.length}/${questions.length}. Retrying with corrections.`);
+            // Try to regenerate just the missing count
+            const missingCount = params.count - valid.length;
+            if (missingCount > 0) {
+                const supplementResult = await generateQuestions({
+                    ...params,
+                    count: missingCount,
+                    _previousIssues: issues
+                }, retryCount + 1);
+                // Combine valid questions with supplemental ones
+                if (supplementResult.questions && supplementResult.questions.length > 0) {
+                    const combinedQuestions = [...valid, ...supplementResult.questions];
+                    const questionsWithImages = await processQuestionsWithImages(combinedQuestions, params.subject);
+                    return {
+                        questions: questionsWithImages,
+                        metadata: {
+                            source: 'ai',
+                            provider: usedProvider,
+                            validation: {
+                                total: combinedQuestions.length,
+                                valid: combinedQuestions.length,
+                                invalid: 0,
+                                retries: retryCount + 1
+                            }
+                        },
+                        cache_info: cacheInfo
+                    };
+                }
+            }
+        }
+        if (invalid.length > 0) {
+            invalid.slice(0, 3).forEach((item, idx) => {
+                logger_1.default.warn(`Invalid Q${idx + 1}: ${questionValidator_service_1.QuestionValidatorService.getSummary(item.validation)}`);
+            });
+        }
+        // Track quality metrics
+        try {
+            await qualityMonitoring_service_1.QualityMonitoringService.trackQuestionQuality(valid, validationResults);
+        }
+        catch (e) {
+            logger_1.default.warn(`Quality monitoring failed: ${e}`);
+        }
+        // Process only valid questions to add images where needed
+        const questionsWithImages = await processQuestionsWithImages(valid, params.subject);
+        return {
+            questions: questionsWithImages,
+            metadata: {
+                source: 'ai',
+                provider: usedProvider,
+                validation: {
+                    total: questions.length,
+                    valid: valid.length,
+                    invalid: invalid.length,
+                    averageScore: validationResults.length > 0 ? validationResults.reduce((sum, v) => sum + v.score, 0) / validationResults.length : 0,
+                    retries: retryCount
+                }
+            },
+            cache_info: cacheInfo,
+            debug: {
+                invalidQuestions: invalid.slice(0, 3)
+            }
+        };
     }
     catch (error) {
-        logger_1.default.warn(`AI service failed, using mock data: ${error}`);
-        // Fallback to mock data
-        const questions = generateMockQuestions(params);
-        // Cache mock result for shorter time (5 minutes) (temporarily disabled)
-        // await redisClient.set(cacheKey, JSON.stringify(questions), { EX: 300 });
+        logger_1.default.warn(`AI service failed: ${error}`);
+        // Retry on AI service failure
+        if (retryCount < MAX_RETRIES) {
+            logger_1.default.info(`Retrying after AI service failure (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            return generateQuestions(params, retryCount + 1);
+        }
+        // Do NOT return mock questions. Surface explicit error so UI can show a professional message.
         return {
-            questions,
+            questions: [],
             metadata: {
-                source: 'mock',
-                note: 'AI service unavailable, showing sample questions'
+                source: 'error',
+                provider: (params.provider || 'gemini').toLowerCase(),
+                error: error instanceof Error ? error.message : String(error)
             },
             cache_info: cacheInfo
         };
     }
+}
+// Helper function to extract issues from validation results for retry prompts
+function extractValidationIssues(invalidQuestions) {
+    var _a;
+    const issues = new Set();
+    for (const item of invalidQuestions) {
+        if ((_a = item.validation) === null || _a === void 0 ? void 0 : _a.issues) {
+            for (const issue of item.validation.issues) {
+                if (issue.severity === 'critical') {
+                    issues.add(issue.message);
+                    if (issue.suggestion) {
+                        issues.add(`Fix: ${issue.suggestion}`);
+                    }
+                }
+            }
+        }
+    }
+    // Add common fixes if no specific issues found
+    if (issues.size === 0) {
+        issues.add('Ensure all questions have valid content');
+        issues.add('Include proper explanations');
+        issues.add('Verify correct_answer field is present and valid');
+    }
+    return Array.from(issues).slice(0, 5); // Limit to 5 issues
+}
+// Helper function to build retry instructions from previous issues
+function buildRetryInstructions(issues) {
+    return `
+IMPORTANT CORRECTIONS REQUIRED:
+The previous attempt had validation issues. Please fix the following problems:
+${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+
+CRITICAL REQUIREMENTS:
+- Return ONLY a valid JSON array (no markdown code blocks, no explanatory text)
+- Each question MUST have: "question", "correct_answer", "explanation", "difficulty_score"
+- For multiple-choice: include "options" array with 4 choices
+- Do not include any text before or after the JSON array
+- Ensure the response starts with '[' and ends with ']'
+`;
 }
 async function searchQuestions(query) {
     // Placeholder: In production, query the database
@@ -447,9 +644,10 @@ async function generateMixedQuestions(params) {
                 type: questionType.type,
                 count: questionType.count
             };
-            logger_1.default.info(`Generating ${questionType.count} ${questionType.type} questions`);
+            logger_1.default.info(`[MixedGen] Requested ${questionType.count} ${questionType.type} questions`);
             const result = await generateQuestions(typeParams);
             if (result.questions && Array.isArray(result.questions)) {
+                logger_1.default.info(`[MixedGen] Generated ${result.questions.length} ${questionType.type} questions`);
                 // Add question type metadata to each question
                 const questionsWithType = result.questions.map(q => ({
                     ...q,
@@ -467,17 +665,27 @@ async function generateMixedQuestions(params) {
                     requested: questionType.count
                 });
             }
+            else {
+                logger_1.default.warn(`[MixedGen] No questions returned for type: ${questionType.type}`);
+            }
         }
         // Sort questions by type for better organization
         allQuestions.sort((a, b) => {
             const typeOrder = ['multiple-choice', 'true-false', 'fill-in-the-blank', 'short-answer', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'case-study', 'problem-solving'];
             return typeOrder.indexOf(a.questionType) - typeOrder.indexOf(b.questionType);
         });
+        // Ensure all questions have 'answer' field for the frontend and consistent 'type'
+        const finalizedQuestions = allQuestions.map(q => ({
+            ...q,
+            answer: q.answer || q.correct_answer || '',
+            type: q.type || q.questionType
+        }));
+        logger_1.default.info(`[MixedGen] Final total questions to return: ${finalizedQuestions.length}`);
         return {
-            questions: allQuestions,
+            questions: finalizedQuestions,
             metadata: {
                 ...metadata,
-                totalQuestions: allQuestions.length,
+                totalQuestions: finalizedQuestions.length,
                 questionTypes: questionTypes.length,
                 mixed: true
             },

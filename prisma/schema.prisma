@@ -169,6 +169,7 @@ model Template {
   categoryId   String
   type         TemplateType     @default(SVG)
   svgContent   String? // Base SVG template
+  structure    Json?   // JSON structure for Layouts/Syllabus
   canvasConfig Json? // Canvas drawing configuration
   parameters   Json // Customizable parameters schema
   previewUrl   String?
@@ -202,6 +203,9 @@ enum TemplateType {
   SVG
   CANVAS
   HYBRID
+  MERMAID
+  LAYOUT
+  SYLLABUS
 }
 
 enum GenerationType {

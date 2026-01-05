@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        @page {
+            margin: 0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            font-size: 11pt;
+            line-height: 1.5;
+            color: #000;
+            background: #fff;
+        }
+
+        .page-header {
+            text-align: center;
+            padding: 20px;
+            border-bottom: 3px double #000;
+            margin-bottom: 20px;
+        }
+
+        .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .exam-title {
+            font-size: 16pt;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .exam-details {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            font-size: 11pt;
+        }
+
+        .detail-item {
+            flex: 1;
+        }
+
+        .student-details {
+            border: 2px solid #000;
+            padding: 15px;
+            margin: 20px 0;
+            background: #f9f9f9;
+        }
+
+        .student-details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .detail-row {
+            display: flex;
+            align-items: center;
+        }
+
+        .detail-label {
+            font-weight: bold;
+            min-width: 120px;
+        }
+
+        .detail-line {
+            flex: 1;
+            border-bottom: 1px solid #000;
+            height: 20px;
+        }
+
+        .instructions {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #666;
+            background: #f5f5f5;
+        }
+
+        .instructions h3 {
+            font-size: 13pt;
+            margin-bottom: 10px;
+            text-decoration: underline;
+        }
+
+        .instructions ul {
+            margin-left: 25px;
+        }
+
+        .instructions li {
+            margin: 5px 0;
+        }
+
+        .question-section {
+            margin: 25px 0;
+            page-break-inside: avoid;
+        }
+
+        .question-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 12pt;
+        }
+
+        .question-text {
+            margin-bottom: 10px;
+            text-align: justify;
+        }
+
+        .question-image {
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .question-image img {
+            max-width: 100%;
+            max-height: 300px;
+            border: 1px solid #ddd;
+        }
+
+        .options {
+            margin: 10px 0 10px 20px;
+        }
+
+        .option {
+            margin: 5px 0;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .option-label {
+            font-weight: bold;
+            min-width: 30px;
+        }
+
+        .option-text {
+            flex: 1;
+        }
+
+        .answer-box {
+            margin: 10px 0;
+            padding: 10px;
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+        }
+
+        .answer-label {
+            font-weight: bold;
+            color: #2e7d32;
+        }
+
+        .explanation-box {
+            margin: 10px 0;
+            padding: 10px;
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+
+        .explanation-label {
+            font-weight: bold;
+            color: #1565c0;
+        }
+
+        .page-footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 10pt;
+            padding: 10px;
+            border-top: 1px solid #000;
+        }
+
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 80pt;
+            color: rgba(0, 0, 0, 0.05);
+            z-index: -1;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="page-header">
+        <div class="school-name">{{schoolName}}</div>
+        <div class="exam-title">{{title}}</div>
+        <div class="exam-details">
+            <div class="detail-item"><strong>Date:</strong> {{examDate}}</div>
+            <div class="detail-item"><strong>Duration:</strong> {{duration}}</div>
+            <div class="detail-item"><strong>Max. Marks:</strong> {{maxMarks}}</div>
+        </div>
+    </div>
+
+    <!-- Student Details -->
+    <div class="student-details">
+        <div class="student-details-grid">
+            <div class="detail-row">
+                <span class="detail-label">Student Name:</span>
+                <span class="detail-line"></span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Roll Number:</span>
+                <span class="detail-line"></span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Class/Section:</span>
+                <span class="detail-line"></span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Signature:</span>
+                <span class="detail-line"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="instructions">
+        <h3>General Instructions:</h3>
+        <ul>
+            <li>This question paper contains {{totalQuestions}} questions.</li>
+            <li>All questions are compulsory.</li>
+            <li>Read each question carefully before answering.</li>
+            <li>Write your answers in the space provided.</li>
+            <li>Do not write anything on the question paper.</li>
+        </ul>
+    </div>
+
+    <!-- Sections & Questions -->
+    {{#each sections}}
+    <div class="section-wrapper">
+        <div style="border-bottom: 2px solid #000; margin: 30px 0 15px 0; padding-bottom: 5px;">
+            <h2 style="font-size: 14pt; text-transform: uppercase;">Section {{this.sectionLetter}}:
+                {{this.sectionTitle}}</h2>
+        </div>
+
+        {{#each this.questions}}
+        <div class="question-section">
+            <div class="question-header">Question {{../sectionLetter}}.{{inc @index}}:</div>
+            <!-- Actually, usually sections have their own numbering or global numbering. Let's use global numbering for now to match the "totalQuestions" instruction. -->
+            <!-- But global numbering is hard without a custom helper if we are nested. Let's add a global index. -->
+            <div class="question-text">{{this.question}}</div>
+
+            {{#if this.imageUrl}}
+            <div class="question-image">
+                <img src="{{this.imageUrl}}" alt="Question Image">
+            </div>
+            {{/if}}
+
+            {{#if this.options}}
+            <div class="options">
+                {{#each this.options}}
+                <div class="option">
+                    <span class="option-label">{{indexToLetter @index}})</span>
+                    <span class="option-text">{{this}}</span>
+                </div>
+                {{/each}}
+            </div>
+            {{/if}}
+
+            {{#if ../../includeAnswers}}
+            <div class="answer-box">
+                <span class="answer-label">Answer:</span> {{this.correct_answer}}{{this.answer}}
+            </div>
+            {{/if}}
+
+            {{#if ../../includeExplanations}}
+            {{#if this.explanation}}
+            <div class="explanation-box">
+                <span class="explanation-label">Explanation:</span> {{this.explanation}}
+            </div>
+            {{/if}}
+            {{/if}}
+        </div>
+        {{/each}}
+    </div>
+    {{/each}}
+
+    <!-- Watermark -->
+    <div class="watermark">{{schoolName}}</div>
+</body>
+
+</html>

@@ -36,16 +36,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const question_service_1 = require("../../services/question.service");
 const visualQuestionGenerator_service_1 = require("../../services/visualQuestionGenerator.service");
-const pdf_service_1 = require("../../services/pdf.service");
+const htmlPdf_service_1 = require("../../services/htmlPdf.service");
 const zod_1 = require("zod");
 const validate_1 = require("../../middleware/validate");
+const questionValidator_service_1 = require("../../services/questionValidator.service");
 const router = (0, express_1.Router)();
 const generateSchema = zod_1.z.object({
     subject: zod_1.z.string(),
     chapter: zod_1.z.string(),
     difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
     type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-    count: zod_1.z.number().min(1).max(10),
+    count: zod_1.z.number().min(1).max(100),
     concepts: zod_1.z.array(zod_1.z.string()).optional(),
     exclude_patterns: zod_1.z.array(zod_1.z.string()).optional(),
     classLevel: zod_1.z.string().optional(),
@@ -53,6 +54,29 @@ const generateSchema = zod_1.z.object({
     enableVisuals: zod_1.z.boolean().optional(),
     title: zod_1.z.string().optional(),
     provider: zod_1.z.enum(['gemini', 'openai']).optional(),
+});
+// Quality validation for a single question
+router.post('/validate-question', async (req, res) => {
+    try {
+        const { question, type } = req.body;
+        if (!question || !type) {
+            return res.status(400).json({
+                error: 'Question object and type are required'
+            });
+        }
+        const validation = await questionValidator_service_1.QuestionValidatorService.validate(question, type);
+        res.json({
+            success: true,
+            validation,
+            summary: questionValidator_service_1.QuestionValidatorService.getSummary(validation),
+            suggestions: validation.issues
+                .filter(i => i.severity === 'critical' || i.severity === 'warning')
+                .map(i => i.suggestion)
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 const bulkGenerateSchema = zod_1.z.object({
     requests: zod_1.z.array(generateSchema),
@@ -73,7 +97,7 @@ const mixedQuestionSchema = zod_1.z.object({
     provider: zod_1.z.enum(['gemini', 'openai']).optional(),
     questionTypes: zod_1.z.array(zod_1.z.object({
         type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-        count: zod_1.z.number().min(1).max(10)
+        count: zod_1.z.number().min(1).max(100)
     })).min(1)
 });
 // A/B testing schema (same as generateSchema but without provider override)
@@ -82,7 +106,7 @@ const abGenerateSchema = zod_1.z.object({
     chapter: zod_1.z.string(),
     difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
     type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
-    count: zod_1.z.number().min(1).max(10),
+    count: zod_1.z.number().min(1).max(100),
     concepts: zod_1.z.array(zod_1.z.string()).optional(),
     exclude_patterns: zod_1.z.array(zod_1.z.string()).optional(),
     classLevel: zod_1.z.string().optional(),
@@ -160,6 +184,45 @@ router.post('/bulk-generate', (0, validate_1.validate)(bulkGenerateSchema), asyn
         res.status(500).json({ error: err.message });
     }
 });
+// Quality report for an array of questions
+router.post('/quality-report', async (req, res) => {
+    try {
+        const { questions, type } = req.body;
+        if (!Array.isArray(questions) || questions.length === 0) {
+            return res.status(400).json({
+                error: 'Questions array is required'
+            });
+        }
+        const validations = await Promise.all(questions.map(q => questionValidator_service_1.QuestionValidatorService.validate(q, type)));
+        const report = {
+            totalQuestions: questions.length,
+            validQuestions: validations.filter(v => v.isValid).length,
+            invalidQuestions: validations.filter(v => !v.isValid).length,
+            averageScore: validations.reduce((sum, v) => sum + v.score, 0) / validations.length,
+            averageMetrics: {
+                clarity: validations.reduce((sum, v) => sum + v.metrics.clarity, 0) / validations.length,
+                pedagogicalValue: validations.reduce((sum, v) => sum + v.metrics.pedagogicalValue, 0) / validations.length,
+                technicalCorrectness: validations.reduce((sum, v) => sum + v.metrics.technicalCorrectness, 0) / validations.length
+            },
+            criticalIssues: validations.flatMap(v => v.issues.filter(i => i.severity === 'critical')).length,
+            warnings: validations.flatMap(v => v.issues.filter(i => i.severity === 'warning')).length,
+            detailedResults: validations.map((v, idx) => ({
+                questionNumber: idx + 1,
+                isValid: v.isValid,
+                score: v.score,
+                summary: questionValidator_service_1.QuestionValidatorService.getSummary(v),
+                topIssues: v.issues.slice(0, 3)
+            }))
+        };
+        res.json({
+            success: true,
+            report
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 // Visual question generation endpoint
 router.post('/generate-visual', (0, validate_1.validate)(generateSchema), async (req, res) => {
     try {
@@ -221,7 +284,7 @@ router.post('/create-pdf', async (req, res) => {
             return res.status(400).json({ error: 'Questions array is required' });
         }
         // Generate PDF from provided questions
-        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateQuestionPDF(questions, {
             title: `${subject} - ${chapter}`,
             subject,
             chapter,
@@ -254,7 +317,7 @@ router.post('/generate-pdf', (0, validate_1.validate)(generateSchema), async (re
         const result = await (0, question_service_1.generateQuestions)(params);
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
         // Generate PDF
-        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateQuestionPDF(questions, {
             title: `${subject} - ${chapter}`,
             subject,
             chapter,
@@ -286,7 +349,7 @@ router.post('/create-answer-key', async (req, res) => {
             return res.status(400).json({ error: 'Questions array is required' });
         }
         // Generate answer key PDF from provided questions
-        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateAnswerKeyPDF(questions, {
             title: `${subject} - ${chapter} - Answer Key`,
             subject,
             chapter,
@@ -317,7 +380,7 @@ router.post('/generate-answer-key', (0, validate_1.validate)(generateSchema), as
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
         // Generate answer key PDF
         const { subject, chapter, difficulty, customTitle } = req.body;
-        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateAnswerKeyPDF(questions, {
             title: `${subject} - ${chapter} - Answer Key`,
             subject,
             chapter,
@@ -349,7 +412,7 @@ router.post('/generate-mixed-pdf', (0, validate_1.validate)(mixedQuestionSchema)
         const result = await generateMixedQuestions(params);
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
         // Generate PDF
-        const pdfBuffer = await pdf_service_1.PDFService.generateQuestionPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateQuestionPDF(questions, {
             title: customTitle || `${subject} - ${chapter} - Mixed Questions`,
             subject,
             chapter,
@@ -383,7 +446,7 @@ router.post('/generate-mixed-answer-key', (0, validate_1.validate)(mixedQuestion
         const questions = Array.isArray(result.questions) ? result.questions : [result.questions];
         // Generate answer key PDF
         const { subject, chapter, difficulty, customTitle } = req.body;
-        const pdfBuffer = await pdf_service_1.PDFService.generateAnswerKeyPDF(questions, {
+        const pdfBuffer = await htmlPdf_service_1.HtmlPdfService.generateAnswerKeyPDF(questions, {
             title: `${subject} - ${chapter} - Mixed Questions Answer Key`,
             subject,
             chapter,

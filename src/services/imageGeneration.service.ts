@@ -1,5 +1,8 @@
 import { TemplateService, ImageGenerationRequest } from './template.service';
-import { StabilityAIService, StabilityAIRequest } from './stabilityAI.service';
+import { LatexService } from './latex.service';
+import { MermaidService } from './mermaid.service';
+import { ChartService } from './chart.service';
+import { AIImageService } from './aiImage.service';
 import { PrismaClient } from '@prisma/client';
 import logger from '../utils/logger';
 
@@ -18,69 +21,177 @@ export interface GenerationResult {
     toolUsed?: string;
     instructions?: string;
     keyElements?: string[];
+    expression?: string;
+    chartType?: string;
+    reason?: string;
+    attempts?: number;
+    [key: string]: any; // Allow additional properties
   };
 }
 
 export class ImageGenerationService {
-  // Main orchestration method
+  // Main orchestration method with retry logic
   static async generateQuestionImage(request: ImageGenerationRequest): Promise<GenerationResult> {
-    try {
-      // Step 1: Classify the requirement
-      const generationType = await TemplateService.classifyImageRequirement(request);
-      
-      logger.info(`Image generation classified as: ${generationType}`);
+    const maxRetries = 3; // Increased to 4 attempts
+    let lastError: any = null;
 
-      if (generationType === 'template') {
-        return await this.generateFromTemplate(request);
-      } else {
-        return await this.generateFromAI(request);
-      }
-    } catch (error: any) {
-      logger.error(`Image generation failed: ${error.message}`);
-      
-      // Fallback strategy - always try template generation if AI fails
-      logger.info('Attempting fallback to template generation due to AI failure');
+    // Try multiple times with different strategies
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await this.generateFromTemplate(request);
-      } catch (templateError: any) {
-        logger.warn(`Template generation also failed: ${templateError.message}`);
-        // Return a simple mock result as final fallback
-        return {
-          imageUrl: this.generateSimpleMockImage(request),
-          generationType: 'template' as const,
-          cost: 0,
-          metadata: {
-            error: `Both AI and template generation failed: ${error.message}`,
-            fallback: true
+        logger.info(`Image generation attempt ${attempt + 1}/${maxRetries + 1}`);
+
+        // Attempt 1: Try template generation
+        if (attempt === 0) {
+          const result = await this.generateFromTemplate(request);
+          if (result.imageUrl && !result.metadata.fallback) {
+            logger.info('Image generated successfully via template');
+            return result;
           }
-        };
+        }
+
+        // Attempt 2: Try with relaxed keyword matching
+        if (attempt === 1) {
+          const relaxedRequest = { ...request, complexity: 'simple' as const };
+          const result = await this.generateFromTemplate(relaxedRequest);
+          if (result.imageUrl && !result.metadata.fallback) {
+            logger.info('Image generated successfully with relaxed matching');
+            return result;
+          }
+        }
+
+        // Attempt 3: Try AI image generation (DALL-E / Stable Diffusion)
+        if (attempt === 2) {
+          logger.info('Attempting AI image generation');
+          const aiPrompt = this.buildAIPrompt(request);
+          const aiImageUrl = await AIImageService.generateWithFallback(aiPrompt);
+
+          if (aiImageUrl) {
+            logger.info('Image generated successfully via AI');
+            return {
+              imageUrl: aiImageUrl,
+              generationType: 'ai',
+              cost: 0.02, // Approximate cost
+              metadata: {
+                aiGenerated: true,
+                prompt: aiPrompt
+              }
+            };
+          } else {
+            logger.warn('AI generation not available or failed');
+          }
+        }
+
+        // Attempt 4: Force fallback to guaranteed SVG
+        if (attempt === 3) {
+          logger.warn('All generation attempts failed, using guaranteed fallback');
+          return {
+            imageUrl: this.generateSimpleMockImage(request),
+            generationType: 'template',
+            cost: 0,
+            metadata: {
+              fallback: true,
+              reason: 'All generation attempts exhausted (including AI)'
+            }
+          };
+        }
+
+      } catch (error: any) {
+        lastError = error;
+        logger.warn(`Attempt ${attempt + 1} failed: ${error.message}`);
+
+        // If this is the last attempt, return guaranteed fallback
+        if (attempt === maxRetries) {
+          logger.error('All attempts failed, returning guaranteed fallback');
+          return {
+            imageUrl: this.generateSimpleMockImage(request),
+            generationType: 'template',
+            cost: 0,
+            metadata: {
+              fallback: true,
+              error: error.message,
+              attempts: maxRetries + 1
+            }
+          };
+        }
       }
     }
+
+    // This should never be reached, but just in case
+    return {
+      imageUrl: this.generateSimpleMockImage(request),
+      generationType: 'template',
+      cost: 0,
+      metadata: {
+        fallback: true,
+        error: lastError?.message || 'Unknown error'
+      }
+    };
+  }
+
+  /**
+   * Build AI-optimized prompt from question content
+   */
+  private static buildAIPrompt(request: ImageGenerationRequest): string {
+    const subjectContext = {
+      mathematics: 'mathematical diagram with clear labels and axes',
+      physics: 'physics diagram showing the concept clearly',
+      chemistry: 'chemical structure or reaction diagram',
+      biology: 'biological illustration with anatomical details',
+      general: 'educational diagram'
+    };
+
+    const context = subjectContext[request.subject as keyof typeof subjectContext] || 'educational diagram';
+
+    return `Create a clear, simple ${context} for: "${request.questionContent}". Style: clean educational illustration, suitable for students, white background, high contrast.`;
   }
 
   // Template-based generation
   private static async generateFromTemplate(request: ImageGenerationRequest): Promise<GenerationResult> {
     // Extract keywords from question content
     const keywords = this.extractKeywords(request.questionContent, request.subject);
-    
+
     // Find suitable templates
-    const templates = await TemplateService.findSuitableTemplates(request.subject, keywords);
-    
+    let templates = await TemplateService.findSuitableTemplates(request.subject, keywords);
+
+    // If no templates found with keywords, try without keywords (get all for subject)
+    if (templates.length === 0 && keywords.length > 0) {
+      logger.info('No templates found with keywords, trying without keywords');
+      templates = await TemplateService.findSuitableTemplates(request.subject, []);
+    }
+
+    // If still no templates, get ANY active template
     if (templates.length === 0) {
-      // No suitable template found, fallback to AI
-      logger.info('No suitable template found, falling back to AI generation');
-      return await this.generateFromAI(request);
+      logger.info('No subject-specific templates, using any active template');
+      const anyTemplate = await prisma.template.findFirst({
+        where: { isActive: true },
+        include: { category: true }
+      });
+      if (anyTemplate) {
+        templates = [anyTemplate];
+      }
+    }
+
+    if (templates.length === 0) {
+      // No suitable template found, use simple mock
+      logger.warn('No templates available in database, using simple mock');
+      return {
+        imageUrl: this.generateSimpleMockImage(request),
+        generationType: 'template',
+        cost: 0,
+        metadata: { fallback: true, reason: 'No templates in database' }
+      };
     }
 
     // Select best template (for now, use the most used one)
     const selectedTemplate = templates[0];
-    
+    logger.info(`Selected template: ${selectedTemplate.name} (${selectedTemplate.category.name})`);
+
     // Generate parameters based on question content
     const parameters = this.generateTemplateParameters(request, selectedTemplate);
-    
+
     // Generate image from template
     const imageUrl = await TemplateService.generateFromTemplate(selectedTemplate.id, parameters);
-    
+
     // Save generation record (do NOT set questionId unless you have a valid Question.id)
     await prisma.generatedImage.create({
       data: {
@@ -104,138 +215,18 @@ export class ImageGenerationService {
     };
   }
 
-  // Diagram-based generation using educational tools
-  private static async generateFromAI(request: ImageGenerationRequest): Promise<GenerationResult> {
-    // Import the new diagram service
-    const { DiagramGenerationService } = await import('./diagramGeneration.service');
-    
-    // Convert to diagram request format
-    const diagramRequest = {
-      subject: request.subject,
-      topic: this.extractTopic(request.questionContent),
-      diagramType: this.extractDiagramType(request.questionContent),
-      specificRequirements: request.questionContent,
-      educationalLevel: this.mapComplexityToLevel(request.complexity),
-      keyElements: this.extractKeyElements(request.questionContent, request.subject),
-      preferredTool: 'auto' as const
-    };
 
-    const result = await DiagramGenerationService.generateDiagram(diagramRequest);
-    
-    return {
-      imageUrl: result.diagramUrl,
-      generationType: 'ai' as const, // Keep as 'ai' for compatibility
-      cost: result.cost,
-      metadata: {
-        cached: result.cached,
-        toolUsed: result.toolUsed,
-        instructions: result.metadata.instructions,
-        keyElements: result.metadata.keyElements
-      }
-    };
-  }
-
-  // Helper methods for diagram generation
-  private static extractTopic(content: string): string {
-    // Extract topic from question content
-    const topicPatterns = [
-      /(?:about|regarding|concerning)\s+([^.!?]+)/i,
-      /(?:in|of|for)\s+([^.!?]+)/i,
-      /([^.!?]*(?:mechanics|circuits|anatomy|molecular|geometry|algebra)[^.!?]*)/i
-    ];
-    
-    for (const pattern of topicPatterns) {
-      const match = content.match(pattern);
-      if (match && match[1]) {
-        return match[1].trim();
-      }
-    }
-    
-    return content.substring(0, 50); // Fallback to first 50 chars
-  }
-
-  private static extractDiagramType(content: string): string {
-    const diagramTypes = [
-      'circuit diagram', 'free body diagram', 'molecular structure', 'anatomical diagram',
-      'graph', 'flowchart', 'process diagram', 'system diagram', 'force diagram',
-      'orbital diagram', 'cell diagram', 'function graph', 'geometric construction'
-    ];
-    
-    const lowerContent = content.toLowerCase();
-    for (const type of diagramTypes) {
-      if (lowerContent.includes(type)) {
-        return type;
-      }
-    }
-    
-    // Check for generic diagram keywords
-    if (lowerContent.includes('diagram')) return 'educational diagram';
-    if (lowerContent.includes('graph')) return 'graph';
-    if (lowerContent.includes('chart')) return 'chart';
-    if (lowerContent.includes('illustration')) return 'illustration';
-    
-    return 'educational diagram';
-  }
-
-  private static mapComplexityToLevel(complexity: string): string {
-    const mapping = {
-      'low': 'Elementary',
-      'medium': 'High School',
-      'high': 'Advanced High School'
-    };
-    return mapping[complexity as keyof typeof mapping] || 'High School';
-  }
-
-  private static extractKeyElements(content: string, subject: string): string[] {
-    const elements: string[] = [];
-    const lowerContent = content.toLowerCase();
-    
-    // Subject-specific element extraction
-    const subjectElements = {
-      physics: ['forces', 'vectors', 'circuits', 'waves', 'particles', 'fields', 'energy', 'momentum'],
-      chemistry: ['atoms', 'molecules', 'bonds', 'reactions', 'electrons', 'orbitals', 'compounds'],
-      biology: ['cells', 'organs', 'systems', 'processes', 'structures', 'organisms', 'tissues'],
-      mathematics: ['functions', 'graphs', 'equations', 'coordinates', 'shapes', 'angles', 'lines']
-    };
-    
-    const relevantElements = subjectElements[subject.toLowerCase() as keyof typeof subjectElements] || [];
-    
-    // Find elements mentioned in content
-    relevantElements.forEach(element => {
-      if (lowerContent.includes(element)) {
-        elements.push(element);
-      }
-    });
-    
-    // Extract specific mentions
-    const specificPatterns = [
-      /(?:show|display|include|draw)\s+([^.!?,]+)/gi,
-      /(?:with|having|containing)\s+([^.!?,]+)/gi
-    ];
-    
-    specificPatterns.forEach(pattern => {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        const element = match[1].trim();
-        if (element.length > 2 && element.length < 30) {
-          elements.push(element);
-        }
-      }
-    });
-    
-    return [...new Set(elements)].slice(0, 8); // Remove duplicates and limit to 8
-  }
 
   private static extractKeywords(content: string, subject: string): string[] {
     const subjectKeywords = {
-      mathematics: ['graph', 'function', 'equation', 'coordinate', 'geometric', 'triangle', 'circle', 'parabola'],
-      physics: ['circuit', 'wave', 'force', 'vector', 'diagram', 'electric', 'magnetic'],
-      chemistry: ['molecule', 'atom', 'bond', 'reaction', 'structure', 'compound'],
-      biology: ['cell', 'organ', 'system', 'process', 'cycle', 'anatomy', 'organism']
+      mathematics: ['graph', 'function', 'equation', 'coordinate', 'geometric', 'triangle', 'circle', 'parabola', 'venn', 'set', 'survey', 'bar', 'pie', 'chart', 'histogram', 'data', 'statistics', 'linear', 'quadratic'],
+      physics: ['circuit', 'wave', 'force', 'vector', 'diagram', 'electric', 'magnetic', 'motion', 'velocity', 'acceleration'],
+      chemistry: ['molecule', 'atom', 'bond', 'reaction', 'structure', 'compound', 'benzene', 'water', 'organic'],
+      biology: ['cell', 'organ', 'system', 'process', 'cycle', 'anatomy', 'organism', 'plant', 'animal', 'mitosis']
     };
 
     const keywords = subjectKeywords[subject as keyof typeof subjectKeywords] || [];
-    return keywords.filter(keyword => 
+    return keywords.filter(keyword =>
       content.toLowerCase().includes(keyword)
     );
   }
@@ -250,34 +241,6 @@ export class ImageGenerationService {
       color: this.getSubjectColor(request.subject)
     };
   }
-
-  private static createAIPrompt(request: ImageGenerationRequest): string {
-    const basePrompt = request.questionContent;
-    const subjectContext = {
-      mathematics: 'mathematical diagram',
-      physics: 'physics illustration',
-      chemistry: 'chemistry diagram',
-      biology: 'biology illustration'
-    };
-
-    const context = subjectContext[request.subject as keyof typeof subjectContext] || 'educational diagram';
-    
-    return `Create a ${context} for: ${basePrompt}`;
-  }
-
-  private static determineStyle(request: ImageGenerationRequest): 'educational' | 'scientific' | 'diagram' | 'realistic' {
-    if (request.subject === 'biology' && request.questionContent.includes('anatomy')) {
-      return 'realistic';
-    }
-    if (request.subject === 'physics' || request.subject === 'chemistry') {
-      return 'scientific';
-    }
-    if (request.questionContent.includes('diagram') || request.questionContent.includes('chart')) {
-      return 'diagram';
-    }
-    return 'educational';
-  }
-
   private static extractTitle(content: string): string {
     // Extract a title from the question content
     const sentences = content.split(/[.!?]/);
@@ -298,35 +261,35 @@ export class ImageGenerationService {
   private static generateSimpleMockImage(request: ImageGenerationRequest): string {
     const width = 300;
     const height = 200;
-    
+
     const subjectColors: Record<string, string> = {
       mathematics: '#3b82f6',
-      physics: '#ef4444', 
+      physics: '#ef4444',
       chemistry: '#10b981',
       biology: '#f59e0b'
     };
-    
+
     const color = subjectColors[request.subject] || '#6b7280';
-    
+
     const svg = `
       <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#f8fafc"/>
-        <rect x="10" y="10" width="${width-20}" height="${height-20}" fill="none" stroke="${color}" stroke-width="2" rx="8"/>
-        <text x="${width/2}" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="${color}">
+        <rect x="10" y="10" width="${width - 20}" height="${height - 20}" fill="none" stroke="${color}" stroke-width="2" rx="8"/>
+        <text x="${width / 2}" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="${color}">
           ${request.subject.toUpperCase()}
         </text>
-        <text x="${width/2}" y="60" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#64748b">
+        <text x="${width / 2}" y="60" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#64748b">
           Image Generation Failed
         </text>
-        <text x="${width/2}" y="${height/2}" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#374151">
+        <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#374151">
           ${request.questionContent.length > 30 ? request.questionContent.substring(0, 30) + '...' : request.questionContent}
         </text>
-        <text x="${width/2}" y="${height-20}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#9ca3af">
+        <text x="${width / 2}" y="${height - 20}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#9ca3af">
           Fallback Image
         </text>
       </svg>
     `;
-    
+
     const base64Svg = Buffer.from(svg).toString('base64');
     return `data:image/svg+xml;base64,${base64Svg}`;
   }
@@ -334,7 +297,7 @@ export class ImageGenerationService {
   // Batch processing for multiple questions
   static async batchGenerateImages(requests: ImageGenerationRequest[]): Promise<GenerationResult[]> {
     const results = [];
-    
+
     for (const request of requests) {
       try {
         const result = await this.generateQuestionImage(request);
@@ -349,7 +312,108 @@ export class ImageGenerationService {
         });
       }
     }
-    
+
     return results;
+  }
+
+  // ============== SPECIALIZED GENERATION METHODS ==============
+
+  /**
+   * Generate LaTeX equation image
+   */
+  static async generateLatexImage(latex: string, options?: {
+    fontSize?: number;
+    color?: string;
+    backgroundColor?: string;
+  }): Promise<GenerationResult> {
+    try {
+      const imageUrl = await LatexService.renderToImage(latex, options);
+      return {
+        imageUrl,
+        generationType: 'template',
+        cost: 0,
+        metadata: { toolUsed: 'katex' }
+      };
+    } catch (error: any) {
+      logger.error(`LaTeX generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Mermaid diagram image
+   */
+  static async generateMermaidImage(
+    mermaidCode: string,
+    options?: { theme?: 'default' | 'forest' | 'dark' | 'neutral' }
+  ): Promise<GenerationResult> {
+    try {
+      const imageUrl = await MermaidService.renderToImage(mermaidCode, options);
+      return {
+        imageUrl,
+        generationType: 'template',
+        cost: 0,
+        metadata: { toolUsed: 'mermaid' }
+      };
+    } catch (error: any) {
+      logger.error(`Mermaid generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate function plot image
+   */
+  static async generateFunctionPlot(
+    expression: string,
+    range?: [number, number]
+  ): Promise<GenerationResult> {
+    try {
+      const imageUrl = await ChartService.generateFunctionPlot(expression, range);
+      return {
+        imageUrl,
+        generationType: 'template',
+        cost: 0,
+        metadata: { toolUsed: 'chartjs', expression }
+      };
+    } catch (error: any) {
+      logger.error(`Function plot generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate data chart image
+   */
+  static async generateDataChart(
+    type: 'bar' | 'line' | 'pie' | 'scatter' | 'doughnut',
+    data: any,
+    title?: string
+  ): Promise<GenerationResult> {
+    try {
+      const imageUrl = await ChartService.generateChart(type, data, title);
+      return {
+        imageUrl,
+        generationType: 'template',
+        cost: 0,
+        metadata: { toolUsed: 'chartjs', chartType: type }
+      };
+    } catch (error: any) {
+      logger.error(`Chart generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate predefined educational diagram
+   */
+  static async generateEducationalDiagram(
+    diagramType: string
+  ): Promise<GenerationResult> {
+    const template = MermaidService.getTemplate(diagramType);
+    if (!template) {
+      throw new Error(`Unknown diagram type: ${diagramType}`);
+    }
+    return this.generateMermaidImage(template);
   }
 }

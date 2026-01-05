@@ -37,7 +37,6 @@ class VisualContentAnalyzer {
                         description: `${category} visualization for ${subject}`,
                         keywords: matchedKeywords,
                         templateSuggestion: visualType.template || undefined,
-                        aiPrompt: this.generateAIPrompt(category, matchedKeywords, subject)
                     });
                 }
             }
@@ -81,7 +80,6 @@ class VisualContentAnalyzer {
                     priority: 'essential',
                     description: 'Custom illustration requested',
                     keywords: this.extractKeywords(questionText),
-                    aiPrompt: this.generateGenericAIPrompt(questionText, analysisResult.subject)
                 });
             }
         }
@@ -109,21 +107,9 @@ class VisualContentAnalyzer {
     }
     static determineApproach(requirements) {
         const hasTemplates = requirements.some(r => r.templateSuggestion);
-        const needsAI = requirements.some(r => !r.templateSuggestion);
-        if (hasTemplates && needsAI)
-            return 'hybrid';
         if (hasTemplates)
             return 'template';
-        return 'ai';
-    }
-    static generateAIPrompt(category, keywords, subject) {
-        return `Create an educational ${category} diagram for ${subject} focusing on: ${keywords.join(', ')}. 
-    Style: clean, educational, suitable for students, clear labels, professional appearance.`;
-    }
-    static generateGenericAIPrompt(questionText, subject) {
-        const keywords = this.extractKeywords(questionText);
-        return `Create an educational illustration for ${subject} question about: ${keywords.join(', ')}. 
-    Style: educational, clear, suitable for students, informative visual aid.`;
+        return 'template'; // Default to template even if not explicit, as AI is removed
     }
     static extractKeywords(text) {
         // Simple keyword extraction - in production, use NLP

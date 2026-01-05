@@ -142,6 +142,80 @@ async function main() {
             }
         }
     });
+    // Venn Diagram for Sets
+    await prisma.template.upsert({
+        where: { id: 'math-venn-diagram' },
+        update: {},
+        create: {
+            id: 'math-venn-diagram',
+            name: 'Venn Diagram',
+            description: 'Two or three circle Venn diagram for set theory',
+            categoryId: mathCategory.id,
+            type: 'SVG',
+            svgContent: `<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="white"/>
+        <!-- Universal set rectangle -->
+        <rect x="30" y="30" width="340" height="240" fill="none" stroke="#374151" stroke-width="2" rx="5"/>
+        <text x="40" y="50" font-family="Arial" font-size="12" fill="#374151">{{universalLabel}}</text>
+        <!-- Set A (left circle) -->
+        <circle cx="150" cy="150" r="70" fill="rgba(59, 130, 246, 0.3)" stroke="#3b82f6" stroke-width="2"/>
+        <text x="100" y="120" font-family="Arial" font-size="14" font-weight="bold" fill="#1d4ed8">{{setALabel}}</text>
+        <!-- Set B (right circle) -->
+        <circle cx="250" cy="150" r="70" fill="rgba(239, 68, 68, 0.3)" stroke="#ef4444" stroke-width="2"/>
+        <text x="270" y="120" font-family="Arial" font-size="14" font-weight="bold" fill="#dc2626">{{setBLabel}}</text>
+        <!-- Intersection label -->
+        <text x="185" y="155" font-family="Arial" font-size="12" fill="#374151">{{intersectionLabel}}</text>
+        <!-- Title -->
+        <text x="120" y="285" font-family="Arial" font-size="14" font-weight="bold" fill="#374151">{{title}}</text>
+      </svg>`,
+            parameters: {
+                universalLabel: { type: 'string', default: 'U', description: 'Universal set label' },
+                setALabel: { type: 'string', default: 'A', description: 'Set A label' },
+                setBLabel: { type: 'string', default: 'B', description: 'Set B label' },
+                intersectionLabel: { type: 'string', default: 'A∩B', description: 'Intersection label' },
+                title: { type: 'string', default: 'Venn Diagram', description: 'Diagram title' }
+            }
+        }
+    });
+    // Three-circle Venn Diagram
+    await prisma.template.upsert({
+        where: { id: 'math-venn-diagram-3' },
+        update: {},
+        create: {
+            id: 'math-venn-diagram-3',
+            name: 'Three Circle Venn Diagram',
+            description: 'Three circle Venn diagram for three sets',
+            categoryId: mathCategory.id,
+            type: 'SVG',
+            svgContent: `<svg width="400" height="320" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="white"/>
+        <!-- Universal set rectangle -->
+        <rect x="20" y="20" width="360" height="280" fill="none" stroke="#374151" stroke-width="2" rx="5"/>
+        <text x="30" y="40" font-family="Arial" font-size="12" fill="#374151">{{universalLabel}}</text>
+        <!-- Set A (top circle) -->
+        <circle cx="200" cy="110" r="60" fill="rgba(59, 130, 246, 0.25)" stroke="#3b82f6" stroke-width="2"/>
+        <text x="185" y="70" font-family="Arial" font-size="14" font-weight="bold" fill="#1d4ed8">{{setALabel}}</text>
+        <!-- Set B (bottom-left circle) -->
+        <circle cx="150" cy="190" r="60" fill="rgba(239, 68, 68, 0.25)" stroke="#ef4444" stroke-width="2"/>
+        <text x="90" y="220" font-family="Arial" font-size="14" font-weight="bold" fill="#dc2626">{{setBLabel}}</text>
+        <!-- Set C (bottom-right circle) -->
+        <circle cx="250" cy="190" r="60" fill="rgba(34, 197, 94, 0.25)" stroke="#22c55e" stroke-width="2"/>
+        <text x="280" y="220" font-family="Arial" font-size="14" font-weight="bold" fill="#16a34a">{{setCLabel}}</text>
+        <!-- Center label (A∩B∩C) -->
+        <text x="188" y="165" font-family="Arial" font-size="10" fill="#374151">{{centerLabel}}</text>
+        <!-- Title -->
+        <text x="130" y="310" font-family="Arial" font-size="14" font-weight="bold" fill="#374151">{{title}}</text>
+      </svg>`,
+            parameters: {
+                universalLabel: { type: 'string', default: 'U', description: 'Universal set label' },
+                setALabel: { type: 'string', default: 'A', description: 'Set A label' },
+                setBLabel: { type: 'string', default: 'B', description: 'Set B label' },
+                setCLabel: { type: 'string', default: 'C', description: 'Set C label' },
+                centerLabel: { type: 'string', default: 'A∩B∩C', description: 'Center intersection label' },
+                title: { type: 'string', default: 'Venn Diagram', description: 'Diagram title' }
+            }
+        }
+    });
     // Physics Templates
     await prisma.template.upsert({
         where: { id: 'physics-simple-circuit' },
@@ -383,6 +457,47 @@ async function main() {
       </svg>`,
             parameters: {
                 title: { type: 'string', default: 'Animal Cell Structure', description: 'Cell diagram title' }
+            }
+        }
+    });
+    // Chart.js Templates
+    await prisma.template.upsert({
+        where: { id: 'math-function-plot' },
+        update: {},
+        create: {
+            id: 'math-function-plot',
+            name: 'Function Plot',
+            description: 'Plot of a mathematical function f(x)',
+            categoryId: mathCategory.id,
+            type: 'CANVAS',
+            canvasConfig: {
+                chartType: 'function_plot',
+                defaultFunction: 'x^2',
+                defaultRange: [-10, 10]
+            },
+            parameters: {
+                function: { type: 'string', description: 'Function expression' },
+                range: { type: 'array', description: 'X-axis range [min, max]' }
+            }
+        }
+    });
+    await prisma.template.upsert({
+        where: { id: 'math-data-chart' },
+        update: {},
+        create: {
+            id: 'math-data-chart',
+            name: 'Data Visualization Chart',
+            description: 'Bar, line, or pie chart for data',
+            categoryId: mathCategory.id,
+            type: 'CANVAS',
+            canvasConfig: {
+                chartType: 'chart',
+                type: 'bar'
+            },
+            parameters: {
+                type: { type: 'string', description: 'Chart type: bar, line, pie' },
+                data: { type: 'object', description: 'Chart.js data object' },
+                title: { type: 'string', description: 'Chart title' }
             }
         }
     });
