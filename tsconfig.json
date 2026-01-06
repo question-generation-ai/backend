@@ -107,12 +107,12 @@
   },
   "include": [
     "src/**/*",
-    "prisma/**/*",
-    "scripts/**/*"
+    "prisma/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "scripts",
     "**/*.test.ts",
     "**/*.spec.ts"
   ]

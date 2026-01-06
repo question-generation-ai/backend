@@ -179,6 +179,115 @@ exports.ICSE_CLASS_11 = {
             'Elementary food chain questions',
             'Direct recall of definitions only'
         ]
+    },
+    english: {
+        board: 'icse',
+        classLevel: 'class 11',
+        subject: 'english',
+        expectedComplexity: 4,
+        topics: [
+            'Paper 1: Reflective, Argumentative, Descriptive Essays (400-450 words)',
+            'Directed Writing (Articles, Reviews, Speeches, SOP)',
+            'Proposal Writing',
+            'Advanced Grammar and Transformation',
+            'Macbeth: Acts I & II (Ambition, Prophecy, Murder)',
+            'Prism: Prose Analysis',
+            'Rhapsody: Poetry Analysis'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze Lady Macbeth\'s role in influencing Macbeth\'s decision to murder Duncan.',
+            'Write a reflective essay on "The impact of social media on teenage relationships."',
+            'How does Shakespeare use imagery of darkness and blood in Macbeth Acts I-II?',
+            'Draft a proposal for organizing an environmental awareness campaign in your locality.',
+            'Analyze the theme and tone of the poem "Strange Meeting" with reference to war poetry.',
+            'Write a critical review of a contemporary film highlighting its cinematography and message.'
+        ],
+        notationRequirements: [
+            'Use advanced literary terminology: soliloquy, dramatic irony, tragic flaw',
+            'Reference specific acts and scenes',
+            'Analyze structure, form, and style',
+            'Include comparative analysis across texts'
+        ],
+        avoidPatterns: [
+            'Plot-based summary questions',
+            'Simple character description',
+            'Basic grammar exercises',
+            'Surface interpretation without depth'
+        ]
+    },
+    history: {
+        board: 'icse',
+        classLevel: 'class 11',
+        subject: 'history',
+        expectedComplexity: 4,
+        topics: [
+            'Growth of Indian Nationalism (Swadeshi Movement, Revolutionary Nationalism)',
+            'Colonial Economy (Railways, De-industrialization)',
+            'Social and Religious Reform Movements (Brahmo Samaj, Arya Samaj, Aligarh)',
+            'Gandhian Nationalism (1916-1934: Champaran to Civil Disobedience)',
+            'World War I (Causes, Trench Warfare, Treaty of Versailles)',
+            'Rise of Communism (Russian Revolution, Lenin, Stalin)',
+            'Rise of Fascism and Nazism (Mussolini, Hitler)',
+            'Rise of Militarism in Japan',
+            'The Great Depression (1929 Crash, Impact)'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze the significance of the Swadeshi Movement in India\'s freedom struggle.',
+            'How did British colonial policies lead to the de-industrialization of India?',
+            'Compare the reformist approaches of Raja Ram Mohan Roy and Swami Dayananda Saraswati.',
+            'Explain Gandhi\'s strategy during the Champaran Satyagraha. What made it effective?',
+            'Analyze the causes of World War I. How did nationalism contribute to its outbreak?',
+            'Compare the ideologies of Fascism and Communism with reference to key leaders.',
+            'What were the consequences of the Great Depression on global economies?'
+        ],
+        notationRequirements: [
+            'Use historical terminology and dates accurately',
+            'Analyze causes, events, and consequences',
+            'Compare different movements and ideologies',
+            'Reference specific leaders and their contributions'
+        ],
+        avoidPatterns: [
+            'Simple chronological listing',
+            'Names and dates without analysis',
+            'Description without explanation',
+            'Questions lacking comparative elements'
+        ]
+    },
+    geography: {
+        board: 'icse',
+        classLevel: 'class 11',
+        subject: 'geography',
+        expectedComplexity: 4,
+        topics: [
+            'Physical Geography: Origin of Earth (Big Bang, Nebular Hypothesis)',
+            'Interior of Earth (Crust, Mantle, Core, Seismic Waves)',
+            'Plate Tectonics (Continental Drift, Plate Boundaries)',
+            'Volcanoes and Earthquakes (Landforms, Distribution)',
+            'Atmosphere (Insolation, Heat Budget, Pressure Belts, Circulation)',
+            'Hydrosphere (Ocean Relief, Salinity, Tides, Currents)',
+            'Biosphere (Ecosystems, Biodiversity Loss, Conservation)'
+        ],
+        sampleQuestionPatterns: [
+            'Explain the theory of continental drift. What evidence supports this theory?',
+            'Describe the internal structure of the Earth with reference to seismic wave behavior.',
+            'How do convergent and divergent plate boundaries differ in terms of processes and landforms?',
+            'Explain the heat budget of the Earth. What is the role of greenhouse gases?',
+            'Describe the factors affecting ocean salinity with examples from different regions.',
+            'Explain the concept of biodiversity hotspots. Why are they important for conservation?',
+            'Analyze the factors responsible for the formation of ocean currents.'
+        ],
+        notationRequirements: [
+            'Use scientific terminology accurately',
+            'Explain processes with diagrams (conceptual)',
+            'Reference specific geographic regions',
+            'Include data and examples'
+        ],
+        avoidPatterns: [
+            'Simple feature naming',
+            'Location-based questions only',
+            'Definitions without process explanation',
+            'Questions lacking analytical depth'
+        ]
     }
 };
 /**
@@ -314,6 +423,122 @@ exports.ICSE_CLASS_9 = {
         avoidPatterns: [
             'Simple body part naming',
             'Direct definition recall only'
+        ]
+    },
+    english: {
+        board: 'icse',
+        classLevel: 'class 9',
+        subject: 'english',
+        expectedComplexity: 3,
+        topics: [
+            'Paper 1: Composition (Narrative, Descriptive, Argumentative)',
+            'Letter Writing (Formal and Informal)',
+            'Notice and Email Writing',
+            'Grammar: Prepositions, Tenses, Voice, Speech',
+            'Unseen Passage Comprehension',
+            'Julius Caesar: Acts I & II (Characters, Conspiracy, Ides of March)',
+            'Treasure Chest: Prose and Poetry Analysis'
+        ],
+        sampleQuestionPatterns: [
+            'Write a letter to the editor expressing concern about plastic pollution in your area.',
+            'Analyze the character of Brutus in Julius Caesar Act I. How does his nobility create internal conflict?',
+            'Write a composition describing a memorable incident from your school life.',
+            'Transform: "The teacher praised the students." (Change to Passive Voice)',
+            'Explain the theme of "The Night Mail" poem with reference to imagery used.',
+            'Draft a notice for your school about an upcoming cultural event.'
+        ],
+        notationRequirements: [
+            'Use proper letter format with address, salutation, body, closing',
+            'Include character analysis with textual evidence',
+            'Use literary devices: metaphor, simile, personification',
+            'Proper grammar terminology',
+            'Quote from texts where applicable'
+        ],
+        avoidPatterns: [
+            'Simple grammar identification without application',
+            'Plot summary without analysis',
+            'Direct recall of character names only',
+            'Basic vocabulary questions'
+        ]
+    },
+    'history & civics': {
+        board: 'icse',
+        classLevel: 'class 9',
+        subject: 'history & civics',
+        expectedComplexity: 3,
+        topics: [
+            'Indian Constitution (Preamble, Fundamental Rights, Directive Principles)',
+            'Elections and Election Commission',
+            'Local Self-Government (Panchayati Raj, Municipalities)',
+            'Harappan Civilisation (Urban Planning, Trade, Decline)',
+            'Vedic Period (Society, Religion, Economy)',
+            'Jainism and Buddhism (Teachings, Rise)',
+            'Mauryan Empire (Ashoka\'s Dhamma, Administration)',
+            'Age of the Guptas (Golden Age, Cultural Progress)',
+            'Medieval India (Delhi Sultanate, Mughal Empire, Composite Culture)',
+            'Renaissance and Reformation',
+            'Industrial Revolution'
+        ],
+        sampleQuestionPatterns: [
+            'Explain the significance of the Preamble of the Indian Constitution with reference to its key ideals.',
+            'Compare and contrast the early Vedic and later Vedic periods in terms of society and religion.',
+            'Analyze the factors that led to the decline of the Harappan Civilisation.',
+            'What were the main teachings of Mahavira? How did Jainism impact Indian society?',
+            'Describe Ashoka\'s Dhamma and explain why he adopted it after the Kalinga War.',
+            'Explain the administrative system of the Mauryan Empire with special reference to provincial governance.',
+            'How did the Renaissance contribute to the development of modern Europe?'
+        ],
+        notationRequirements: [
+            'Use proper historical terminology and dates',
+            'Reference specific rulers, events, and periods',
+            'Include cause-and-effect analysis',
+            'Compare and contrast different periods/systems'
+        ],
+        avoidPatterns: [
+            'Simple date recall without context',
+            'Basic ruler name identification',
+            'Direct definition recall',
+            'Questions without analysis or comparison'
+        ]
+    },
+    geography: {
+        board: 'icse',
+        classLevel: 'class 9',
+        subject: 'geography',
+        expectedComplexity: 3,
+        topics: [
+            'Earth as a Planet (Shape, Seasons)',
+            'Geographic Grid (Latitudes, Longitudes, Time Zones)',
+            'Motions of the Earth (Rotation, Revolution, Solstices)',
+            'Structure of the Earth (Crust, Mantle, Core, Rock Cycle)',
+            'Volcanoes and Earthquakes (Types, Distribution, Effects)',
+            'Atmosphere (Composition, Structure, Greenhouse Effect)',
+            'Insolation and Pressure (Heating, Pressure Belts, Winds)',
+            'Humidity and Precipitation (Types of Rainfall)',
+            'Pollution (Air, Water, Soil, Noise)',
+            'Natural Regions (Equatorial, Desert, Mediterranean, Tundra)'
+        ],
+        sampleQuestionPatterns: [
+            'Explain how the revolution of the Earth causes seasons with the help of a diagram.',
+            'Calculate the time difference between two places at 75°E and 120°W.',
+            'Describe the structure of the Earth and explain the rock cycle.',
+            'Why are volcanoes and earthquakes concentrated along the Ring of Fire? Explain.',
+            'Explain the greenhouse effect and its impact on global temperature.',
+            'Differentiate between relief rainfall, convectional rainfall, and cyclonic rainfall with examples.',
+            'Describe the characteristics of the Equatorial region with reference to climate and vegetation.'
+        ],
+        notationRequirements: [
+            'Use proper geographic terminology',
+            'Reference diagrams conceptually',
+            'Include latitude/longitude notation',
+            'Use directional terms (N, S, E, W)',
+            'Explain processes with cause and effect'
+        ],
+        avoidPatterns: [
+            'Simple map reading without interpretation',
+            'Basic location identification only',
+            'Direct definition recall',
+            'Questions without conceptual understanding'
         ]
     }
 };
@@ -470,6 +695,121 @@ exports.ICSE_CLASS_10 = {
             'Direct definition recall',
             'Questions without application or analysis'
         ]
+    },
+    english: {
+        board: 'icse',
+        classLevel: 'class 10',
+        subject: 'english',
+        expectedComplexity: 3.5,
+        topics: [
+            'Paper 1: Advanced Composition',
+            'Grammar Transformations (Advanced)',
+            'Julius Caesar: Acts III, IV & V (Assassination, Speeches, Consequences)',
+            'Treasure Chest: Advanced Prose and Poetry Analysis',
+            'Critical Analysis and Interpretation'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze the rhetoric used in Mark Antony\'s funeral speech in Julius Caesar Act III.',
+            'Compare and contrast the characters of Brutus and Cassius.',
+            'Write an argumentative essay on "Should schools ban mobile phones?"',
+            'Explain the significance of the phrase "Et tu, Brute?" in the context of the play.',
+            'Identify and explain three literary devices used in the poem "When Great Trees Fall".',
+            'Transform: "The committee will announce the results tomorrow." (Change to Passive, Future Perfect)'
+        ],
+        notationRequirements: [
+            'Use literary terminology: irony, foreshadowing, soliloquy',
+            'Include textual evidence with line references',
+            'Analyze character motivation and development',
+            'Compare themes across different texts'
+        ],
+        avoidPatterns: [
+            'Simple plot summary',
+            'Character identification without analysis',
+            'Basic grammar without complex transformation',
+            'Surface-level comprehension'
+        ]
+    },
+    'history & civics': {
+        board: 'icse',
+        classLevel: 'class 10',
+        subject: 'history & civics',
+        expectedComplexity: 3.5,
+        topics: [
+            'Union Legislature (Lok Sabha, Rajya Sabha, Powers)',
+            'Union Executive (President, Prime Minister, Council of Ministers)',
+            'Judiciary (Supreme Court, High Courts, Writs)',
+            'First War of Independence 1857',
+            'Rise of Nationalism (Early and Assertive Nationalists)',
+            'Gandhian Era (Non-Cooperation, Civil Disobedience, Quit India)',
+            'Forward Bloc and INA (Subhas Chandra Bose)',
+            'Independence and Partition',
+            'World War I and II',
+            'Dictatorships (Fascism, Nazism)',
+            'United Nations and Non-Aligned Movement'
+        ],
+        sampleQuestionPatterns: [
+            'Compare the composition and powers of Lok Sabha and Rajya Sabha.',
+            'Explain the jurisdiction of the Supreme Court of India with reference to writs.',
+            'Analyze the causes of the First War of Independence of 1857.',
+            'Compare the methods and contributions of Early Nationalists and Assertive Nationalists.',
+            'Explain Gandhi\'s strategy of non-cooperation. Why did he withdraw the movement?',
+            'What was the significance of the Dandi March in India\'s freedom struggle?',
+            'Explain the causes and consequences of World War II.',
+            'Describe the objectives and organs of the United Nations.'
+        ],
+        notationRequirements: [
+            'Reference specific articles, acts, and constitutional provisions',
+            'Include dates and chronological context',
+            'Analyze political movements with causes and effects',
+            'Compare different systems and ideologies'
+        ],
+        avoidPatterns: [
+            'Simple name and date listing',
+            'Basic definition of constitutional bodies',
+            'Plot-style narration without analysis',
+            'Questions without comparative or analytical elements'
+        ]
+    },
+    geography: {
+        board: 'icse',
+        classLevel: 'class 10',
+        subject: 'geography',
+        expectedComplexity: 3.5,
+        topics: [
+            'Map Work (Topographical Maps, Grid Reference, Symbols)',
+            'Location and Extent of India',
+            'Climate of India (Monsoons, Rainfall Distribution)',
+            'Soil Resources (Types and Distribution)',
+            'Natural Vegetation of India',
+            'Water Resources (Irrigation, Rainwater Harvesting)',
+            'Minerals (Iron Ore, Manganese, Bauxite, Copper)',
+            'Energy Resources (Coal, Petroleum, Hydel, Non-conventional)',
+            'Agriculture (Rice, Wheat, Cotton, Jute, Plantations)',
+            'Industries (Iron and Steel, Textiles, Software)',
+            'Transport (Railways, Roads, Airways, Waterways)',
+            'Waste Management'
+        ],
+        sampleQuestionPatterns: [
+            'Explain the mechanism of the South-West monsoon with its impact on Indian agriculture.',
+            'Compare alluvial soil and black soil in terms of formation, distribution, and crops.',
+            'Describe the distribution of iron ore in India. Why is India rich in iron ore?',
+            'Explain the factors affecting the location of the iron and steel industry in India.',
+            'Differentiate between rabi and kharif crops with examples of each.',
+            'What is the Golden Quadrilateral? Explain its significance for Indian transport.',
+            'Describe the need for waste management and explain any two methods of waste disposal.'
+        ],
+        notationRequirements: [
+            'Use map references and coordinates',
+            'Include specific state/region names',
+            'Reference climate data and patterns',
+            'Explain geographical processes'
+        ],
+        avoidPatterns: [
+            'Simple state capital identification',
+            'Basic crop name listing',
+            'Map reading without interpretation',
+            'Questions without process explanation'
+        ]
     }
 };
 /**
@@ -625,6 +965,114 @@ exports.ISC_CLASS_12 = {
             'Simple organism classification',
             'Direct definition recall',
             'Questions without application or analysis'
+        ]
+    },
+    english: {
+        board: 'icse',
+        classLevel: 'class 12',
+        subject: 'english',
+        expectedComplexity: 4.5,
+        topics: [
+            'Paper 1: Advanced Composition and Proposal Writing',
+            'Macbeth: Acts III, IV & V (Downfall, Tragedy, Consequences)',
+            'Prism: Critical Analysis of Prose',
+            'Rhapsody: Deep Poetry Analysis'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze how Macbeth\'s character degenerates from a noble warrior to a tyrant.',
+            'How does Shakespeare use the motif of sleep in Macbeth? Discuss with examples.',
+            'Compare the roles of Lady Macbeth in Act I and Act V. What explains this transformation?',
+            'Write a critical analysis of "Death be not Proud" examining Donne\'s metaphysical conceits.',
+            'Explain the significance of the banquet scene in Macbeth Act III.',
+            'Draft a comprehensive proposal for implementing a digital literacy program in rural areas.'
+        ],
+        notationRequirements: [
+            'Use advanced literary criticism terminology',
+            'Reference specific textual moments with precision',
+            'Analyze themes, motifs, and symbols comprehensively',
+            'Compare and synthesize across multiple texts'
+        ],
+        avoidPatterns: [
+            'Surface-level character description',
+            'Plot summary without critical analysis',
+            'Simple thematic statements',
+            'Questions lacking depth or synthesis'
+        ]
+    },
+    history: {
+        board: 'icse',
+        classLevel: 'class 12',
+        subject: 'history',
+        expectedComplexity: 4.5,
+        topics: [
+            'Towards Independence (INA, Cabinet Mission, Partition 1939-1947)',
+            'Establishment of Democracy (Sardar Patel, Integration, Linguistic States)',
+            'Development of Democracy (Emergency 1975-77, J.P. Movement, Janata Party)',
+            'Foreign Policy (NAM, Wars with Pakistan and China)',
+            'World War II (Causes, Holocaust, Atomic Bomb)',
+            'De-colonisation (Kenya, Ghana)',
+            'Cold War (Truman Doctrine, Korean War, Cuban Missile Crisis, Vietnam, USSR Collapse)',
+            'Protest Movements (Civil Rights, Anti-Apartheid, Feminist)',
+            'Middle East (Arab-Israeli Conflict, Suez Crisis, Camp David)'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze the role of the Indian National Army in India\'s freedom struggle.',
+            'Evaluate Sardar Patel\'s contribution to the integration of princely states.',
+            'What were the causes and consequences of the Emergency declared in 1975?',
+            'Compare India\'s approach to the 1962 Sino-Indian War and the 1971 Pakistan War.',
+            'Analyze the causes of World War II. How did Hitler\'s expansionist policies contribute?',
+            'Explain the policy of containment during the Cold War with reference to specific events.',
+            'Evaluate the significance of the Civil Rights Movement in achieving racial equality in the USA.',
+            'What factors led to the Arab-Israeli conflict? Explain the Camp David Accords.'
+        ],
+        notationRequirements: [
+            'Analyze complex historical processes',
+            'Compare different perspectives and interpretations',
+            'Reference primary and secondary sources',
+            'Include geopolitical analysis'
+        ],
+        avoidPatterns: [
+            'Simple event narration',
+            'Timeline-based answers without analysis',
+            'Descriptions without evaluation',
+            'Questions lacking critical perspectives'
+        ]
+    },
+    geography: {
+        board: 'icse',
+        classLevel: 'class 12',
+        subject: 'geography',
+        expectedComplexity: 4.5,
+        topics: [
+            'India: Population (Distribution, Density, Growth, Migration)',
+            'Human Settlements (Rural Types, Urban Classification)',
+            'Resources (Land Use, Water Conservation, Mineral Belts)',
+            'Agriculture (Green Revolution Issues, Dryland Farming)',
+            'Industries (Location Factors, Liberalisation, Regional Development)',
+            'Transport (Modes and Significance)',
+            'Regional Development (State-specific studies)',
+            'Practical Work (Surveying, Map Projections, Remote Sensing, GIS)'
+        ],
+        sampleQuestionPatterns: [
+            'Analyze the spatial distribution of population in India with reference to physiographic and economic factors.',
+            'Explain the problems associated with the Green Revolution in India.',
+            'What factors influence the location of iron and steel industries? Illustrate with Mumbai-Pune region.',
+            'Compare the development trajectories of Chhattisgarh (minerals) and Bengaluru (electronics).',
+            'Explain the concept of dryland farming. Which regions of India practice it and why?',
+            'Analyze migration trends in India. What are the push and pull factors?',
+            'What is the role of GIS and Remote Sensing in modern geographical studies?'
+        ],
+        notationRequirements: [
+            'Use statistical data and spatial analysis',
+            'Reference specific regions and case studies',
+            'Explain geographical processes and patterns',
+            'Include modern technology applications'
+        ],
+        avoidPatterns: [
+            'Simple factual recall',
+            'Location identification without analysis',
+            'Data presentation without interpretation',
+            'Questions lacking spatial or processual understanding'
         ]
     }
 };

@@ -195,6 +195,151 @@ function sanitizeLatexForJson(jsonString) {
     }
     return result;
 }
+// Helper function to repair malformed JSON
+function repairMalformedJson(jsonString) {
+    try {
+        let repaired = jsonString.trim();
+        // Track string state to find unterminated strings
+        let inString = false;
+        let lastQuotePos = -1;
+        let escapeNext = false;
+        let bracketStack = [];
+        // Scan through to understand the structure
+        for (let i = 0; i < repaired.length; i++) {
+            const char = repaired[i];
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = !inString;
+                if (inString) {
+                    lastQuotePos = i;
+                }
+            }
+            if (!inString) {
+                if (char === '[' || char === '{') {
+                    bracketStack.push(char);
+                }
+                else if (char === ']' || char === '}') {
+                    bracketStack.pop();
+                }
+            }
+        }
+        // If we ended inside a string, close it
+        if (inString && lastQuotePos !== -1) {
+            logger_1.default.warn('Detected unterminated string, attempting repair');
+            repaired += '"';
+            inString = false;
+        }
+        // Remove any trailing incomplete object/array
+        // Look backwards from the end to find the last complete structure
+        let lastCompletePos = repaired.length;
+        if (bracketStack.length > 0) {
+            logger_1.default.warn(`Detected ${bracketStack.length} unclosed brackets, trimming incomplete structures`);
+            // Find the last complete comma-separated item
+            let depth = 0;
+            let inStr = false;
+            let escNext = false;
+            for (let i = repaired.length - 1; i >= 0; i--) {
+                const char = repaired[i];
+                if (escNext) {
+                    escNext = false;
+                    continue;
+                }
+                if (char === '\\') {
+                    escNext = true;
+                    continue;
+                }
+                if (char === '"') {
+                    inStr = !inStr;
+                }
+                if (!inStr) {
+                    if (char === '}' || char === ']')
+                        depth++;
+                    if (char === '{' || char === '[')
+                        depth--;
+                    // Found a complete item separator at depth 1 (inside main array)
+                    if (char === ',' && depth === 1) {
+                        lastCompletePos = i;
+                        break;
+                    }
+                }
+            }
+            // Trim to last complete item
+            repaired = repaired.substring(0, lastCompletePos);
+        }
+        // Remove trailing comma if present
+        repaired = repaired.replace(/,\s*$/, '');
+        // Close any remaining open structures
+        while (bracketStack.length > 0) {
+            const opening = bracketStack.pop();
+            if (opening === '[') {
+                repaired += ']';
+            }
+            else if (opening === '{') {
+                repaired += '}';
+            }
+        }
+        logger_1.default.info('JSON repair completed');
+        return repaired;
+    }
+    catch (err) {
+        logger_1.default.warn(`JSON repair failed: ${err}`);
+        return jsonString; // Return original if repair fails
+    }
+}
+// Helper function to extract valid questions incrementally
+function extractValidQuestionsFromText(text) {
+    const validQuestions = [];
+    try {
+        logger_1.default.info('Attempting incremental question extraction from malformed JSON');
+        // Pattern to match question objects (flexible to handle various formats)
+        // Look for objects that have a "question" field
+        const questionPattern = /\{[^{}]*"question"\s*:\s*"(?:[^"\\]|\\.)*"[^{}]*\}/gs;
+        // Also try to match more complete objects with nested structures
+        const matches = text.match(questionPattern);
+        if (!matches || matches.length === 0) {
+            logger_1.default.warn('No question patterns found in text');
+            return validQuestions;
+        }
+        logger_1.default.info(`Found ${matches.length} potential question objects`);
+        // Try to parse each match
+        for (let i = 0; i < matches.length; i++) {
+            try {
+                const match = matches[i];
+                // Try to balance braces/brackets if needed
+                let balanced = match;
+                let braceCount = (balanced.match(/\{/g) || []).length - (balanced.match(/\}/g) || []).length;
+                while (braceCount > 0) {
+                    balanced += '}';
+                    braceCount--;
+                }
+                // Sanitize LaTeX
+                balanced = sanitizeLatexForJson(balanced);
+                const parsed = JSON.parse(balanced);
+                // Validate it has required fields
+                if (parsed.question && typeof parsed.question === 'string') {
+                    validQuestions.push(parsed);
+                    logger_1.default.info(`Successfully extracted question ${i + 1}`);
+                }
+            }
+            catch (err) {
+                logger_1.default.warn(`Failed to parse question candidate ${i + 1}: ${err}`);
+            }
+        }
+        logger_1.default.info(`Incremental extraction succeeded: ${validQuestions.length} valid questions`);
+        return validQuestions;
+    }
+    catch (err) {
+        logger_1.default.warn(`Incremental extraction failed: ${err}`);
+        return validQuestions;
+    }
+}
 function parseAIResponse(aiResponse) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
     // Try to extract questions from AI response (Gemini or OpenAI)
@@ -207,8 +352,8 @@ function parseAIResponse(aiResponse) {
         }
         if (!text)
             throw new Error('No AI response text');
-        // Log the response for debugging
-        console.log('AI Response text:', text);
+        // Log the response for debugging (truncated)
+        console.log('AI Response text (first 500 chars):', text.substring(0, 500));
         // Clean the text to extract JSON from markdown code blocks
         let cleanText = text;
         // Remove markdown code block markers
@@ -262,24 +407,58 @@ function parseAIResponse(aiResponse) {
                 }
             }
         }
-        console.log('Cleaned text:', cleanText);
+        console.log('Cleaned text length:', cleanText.length);
         // Sanitize LaTeX backslashes that break JSON parsing
         // LaTeX commands like \frac, \sqrt, \cup need double-escaping in JSON
         cleanText = sanitizeLatexForJson(cleanText);
-        // Try to parse as JSON
-        const parsed = JSON.parse(cleanText);
-        // Handle different response formats
-        if (Array.isArray(parsed)) {
-            return parsed;
-        }
-        if (parsed.questions && Array.isArray(parsed.questions)) {
-            return parsed.questions;
-        }
-        if (parsed.question) {
+        // ATTEMPT 1: Standard JSON parsing
+        try {
+            const parsed = JSON.parse(cleanText);
+            // Handle different response formats
+            if (Array.isArray(parsed)) {
+                return parsed;
+            }
+            if (parsed.questions && Array.isArray(parsed.questions)) {
+                return parsed.questions;
+            }
+            if (parsed.question) {
+                return [parsed];
+            }
+            // If it's a single object, wrap it in an array
             return [parsed];
         }
-        // If it's a single object, wrap it in an array
-        return [parsed];
+        catch (parseErr) {
+            logger_1.default.warn(`Standard JSON parse failed: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+            // ATTEMPT 2: Try JSON repair
+            try {
+                logger_1.default.info('Attempting JSON repair...');
+                const repairedText = repairMalformedJson(cleanText);
+                const parsed = JSON.parse(repairedText);
+                logger_1.default.info('JSON repair successful!');
+                // Handle different response formats
+                if (Array.isArray(parsed)) {
+                    return parsed;
+                }
+                if (parsed.questions && Array.isArray(parsed.questions)) {
+                    return parsed.questions;
+                }
+                if (parsed.question) {
+                    return [parsed];
+                }
+                return [parsed];
+            }
+            catch (repairErr) {
+                logger_1.default.warn(`JSON repair parse failed: ${repairErr instanceof Error ? repairErr.message : repairErr}`);
+                // ATTEMPT 3: Incremental extraction
+                const incrementalResults = extractValidQuestionsFromText(text);
+                if (incrementalResults.length > 0) {
+                    logger_1.default.info(`Incremental parsing recovered ${incrementalResults.length} questions`);
+                    return incrementalResults;
+                }
+                // All attempts failed, throw the original error
+                throw parseErr;
+            }
+        }
     }
     catch (err) {
         console.log('Failed to parse AI response:', err);
@@ -290,7 +469,7 @@ function parseAIResponse(aiResponse) {
                 // Try to extract the actual question content from the markdown
                 let questionText = text;
                 if (text.includes('"question":')) {
-                    const match = text.match(/"question":\s*"([^"]+)"/);
+                    const match = text.match(/"question"\s*:\s*"([^"]+)"/);
                     if (match) {
                         questionText = match[1];
                     }
@@ -422,6 +601,7 @@ async function saveQuestionsToDatabase(questions, params) {
     return savedQuestions;
 }
 async function generateQuestions(params, retryCount = 0) {
+    var _a, _b;
     const MAX_RETRIES = 2;
     const cacheKey = getCacheKey(params);
     let cacheInfo = { hit: false, key: cacheKey };
@@ -459,10 +639,18 @@ async function generateQuestions(params, retryCount = 0) {
         if (questions.length === 0 || (questions.length === 1 && questions[0].error)) {
             logger_1.default.warn('AI response parsing failed');
             if (retryCount < MAX_RETRIES) {
+                // Extract error details if available
+                const errorDetails = ((_a = questions[0]) === null || _a === void 0 ? void 0 : _a.details) || 'Unknown parsing error';
                 logger_1.default.info(`Retrying question generation due to parse failure (attempt ${retryCount + 1}/${MAX_RETRIES})`);
                 return generateQuestions({
                     ...params,
-                    _previousIssues: ['Response was not valid JSON', 'Ensure output is a valid JSON array']
+                    _previousIssues: [
+                        'Response was not valid JSON',
+                        `Parse error: ${errorDetails}`,
+                        'Common issues: unterminated strings, unclosed brackets, invalid escape sequences',
+                        'Ensure output is a valid JSON array with properly closed strings and objects',
+                        'Keep responses concise to avoid truncation - prioritize quality over quantity'
+                    ]
                 }, retryCount + 1);
             }
             return {
@@ -470,7 +658,8 @@ async function generateQuestions(params, retryCount = 0) {
                 metadata: {
                     source: 'error',
                     provider: usedProvider,
-                    error: 'Failed to parse AI response after retries'
+                    error: 'Failed to parse AI response after retries',
+                    details: (_b = questions[0]) === null || _b === void 0 ? void 0 : _b.details
                 },
                 cache_info: cacheInfo
             };
