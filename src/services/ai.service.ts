@@ -2,7 +2,7 @@ import axios from 'axios';
 import logger from '../utils/logger';
 
 // Prefer the public Generative Language API with API Key. Vertex endpoints require a different auth flow.
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-pro';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
 const RAW_GEMINI_API_URL = process.env.GEMINI_API_URL; // optional override
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -25,7 +25,7 @@ function buildPublicEndpointWithVersion(model: string, version: 'v1beta' | 'v1')
 
 // Normalize model names to use versions supported by the Gemini API v1beta
 function normalizeModelName(model: string): string {
-  if (!model) return 'gemini-3-pro';
+  if (!model) return 'gemini-2.5-pro';
   let m = model.trim().toLowerCase();
   // Strip any trailing :generateContent if provided mistakenly
   m = m.replace(/:generatecontent$/i, '');
@@ -37,17 +37,19 @@ function normalizeModelName(model: string): string {
   // Remove any leading publishers/google/ if present
   m = m.replace(/^publishers\/google\//, '');
 
-  // Map to available model names in v1beta API (as of January 2026)
-  // Using stable versions that actually exist
-  if (m.includes('gemini-3-pro')) return 'gemini-3-pro';
-  if (m.includes('gemini-2.5-flash')) return 'gemini-2.5-flash';
+  // Map to available model names in v1beta API (verified January 2026)
+  // Note: gemini-3.0-pro does NOT exist, only gemini-3-pro-preview
+  if (m.includes('gemini-3-pro-preview')) return 'gemini-3-pro-preview';
+  if (m.includes('gemini-3-flash-preview')) return 'gemini-3-flash-preview';
+  if (m.includes('gemini-3-pro') || m.includes('gemini-3.0-pro')) return 'gemini-3-pro-preview'; // Map to preview
   if (m.includes('gemini-2.5-pro')) return 'gemini-2.5-pro';
+  if (m.includes('gemini-2.5-flash')) return 'gemini-2.5-flash';
   if (m.includes('gemini-2.0-flash')) return 'gemini-2.0-flash';
   if (m.includes('gemini-flash-latest')) return 'gemini-flash-latest';
   if (m.includes('gemini-pro-latest')) return 'gemini-pro-latest';
 
-  // Default to stable 3 pro model
-  return 'gemini-3-pro';
+  // Default to stable 2.5 pro model (most reliable)
+  return 'gemini-2.5-pro';
 }
 
 // Extract retry delay from rate limit error response
@@ -97,14 +99,15 @@ export class GeminiAIService {
       endpoint = buildPublicEndpoint(effectiveModel);
     }
 
-    // Prepare candidate endpoints with fallback models
+    // Prepare candidate endpoints with fallback models (verified working in v1beta API, Jan 2026)
     const candidateModels = [
       effectiveModel,
-      'gemini-3-pro',
-      'gemini-2.5-pro',
-      'gemini-2.0-flash',
-      'gemini-flash-latest',
-      'gemini-pro-latest' // Additional fallback
+      'gemini-2.5-pro',      // Stable, most capable
+      'gemini-2.5-flash',    // Stable, fast
+      'gemini-2.0-flash',    // Stable alternative
+      'gemini-flash-latest', // Latest flash alias
+      'gemini-pro-latest',   // Latest pro alias
+      'gemini-3-pro-preview' // Preview only, last resort
     ];
     const uniqueModels = Array.from(new Set(candidateModels));
     const candidateEndpoints: string[] = [];
