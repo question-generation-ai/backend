@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import app from './app';
 import config from './config';
 import logger from './utils/logger';
@@ -10,7 +11,7 @@ console.log('Starting server...');
 const server = app
   .listen(PORT, () => {
     console.log(`Server running on port ${PORT} [${config.env}]`);
-    
+
     // Start token cleanup job (runs every hour)
     setInterval(async () => {
       try {

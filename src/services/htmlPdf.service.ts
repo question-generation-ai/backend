@@ -153,10 +153,10 @@ export class HtmlPdfService {
                 format: 'A4',
                 printBackground: true,
                 margin: {
-                    top: '12mm',
-                    right: '10mm',
-                    bottom: '12mm',
-                    left: '10mm'
+                    top: '15mm',
+                    right: '20mm',
+                    bottom: '15mm',
+                    left: '20mm'
                 }
             });
 
@@ -221,10 +221,10 @@ export class HtmlPdfService {
                 format: 'A4',
                 printBackground: true,
                 margin: {
-                    top: '12mm',
-                    right: '10mm',
-                    bottom: '12mm',
-                    left: '10mm'
+                    top: '15mm',
+                    right: '20mm',
+                    bottom: '15mm',
+                    left: '20mm'
                 }
             });
 
