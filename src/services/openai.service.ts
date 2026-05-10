@@ -6,7 +6,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'sk-proj-gdTvuXrKx-vzVPK43B
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 export class OpenAIService {
-  static async generateContent(prompt: string, maxRetries = 3): Promise<any> {
+  static async generateContent(
+    prompt: string,
+    maxRetries = 3,
+    options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<any> {
     if (!OPENAI_API_KEY) {
       throw new Error('Missing OPENAI_API_KEY');
     }
@@ -24,9 +28,9 @@ export class OpenAIService {
               { role: 'user', content: prompt }
             ],
             response_format: { type: 'json_object' },
-            temperature: 0.7,
+            temperature: options.temperature ?? 0.25,
             top_p: 0.95,
-            max_tokens: 2048
+            max_tokens: options.maxTokens ?? 1400
           },
           {
             timeout: 30000,

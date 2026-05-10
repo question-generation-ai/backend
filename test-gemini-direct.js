@@ -2,8 +2,14 @@
 const axios = require('axios');
 
 async function testGemini() {
-    const apiKey = 'AIzaSyD3QHSw5ND0tkHzUztnDLmxI2C7su0B6ic';
-    const model = 'gemini-2.0-flash';
+    const apiKey = process.env.GEMINI_API_KEY;
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+    if (!apiKey) {
+        console.error('Set GEMINI_API_KEY before running this script.');
+        process.exit(1);
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     
     console.log(`Testing Gemini API directly...`);

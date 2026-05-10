@@ -37,6 +37,15 @@ export interface PDFOptions {
 export class HtmlPdfService {
     private static readonly TEMPLATES_DIR = path.join(__dirname, '../templates/layouts');
 
+    private static getTemplatePath(fileName: string): string {
+        const compiledPath = path.join(this.TEMPLATES_DIR, fileName);
+        if (fs.existsSync(compiledPath)) {
+            return compiledPath;
+        }
+
+        return path.join(process.cwd(), 'src', 'templates', 'layouts', fileName);
+    }
+
     // Register Handlebars helpers
     private static registerHelpers() {
         // Helper to convert index to letter (0 -> A, 1 -> B, etc.)
@@ -113,7 +122,7 @@ export class HtmlPdfService {
             this.registerHelpers();
 
             // Load and compile template
-            const templatePath = path.join(this.TEMPLATES_DIR, 'question-paper.hbs');
+            const templatePath = this.getTemplatePath('question-paper.hbs');
             const templateSource = fs.readFileSync(templatePath, 'utf-8');
             const template = Handlebars.compile(templateSource);
 
@@ -185,7 +194,7 @@ export class HtmlPdfService {
             this.registerHelpers();
 
             // Load and compile template
-            const templatePath = path.join(this.TEMPLATES_DIR, 'answer-key.hbs');
+            const templatePath = this.getTemplatePath('answer-key.hbs');
             const templateSource = fs.readFileSync(templatePath, 'utf-8');
             const template = Handlebars.compile(templateSource);
 

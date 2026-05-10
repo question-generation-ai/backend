@@ -21,6 +21,7 @@ const generateSchema = z.object({
   classLevel: z.union([z.string(), z.number().transform(String)]).optional(),
   extraCommands: z.string().optional(),
   enableVisuals: z.boolean().optional(),
+  visualStyle: z.enum(['auto', 'vector', 'biology-color']).optional(),
   title: z.string().optional(),
   provider: z.enum(['gemini', 'openai']).optional(),
 });
@@ -72,6 +73,8 @@ const mixedQuestionSchema = z.object({
   customTitle: z.string().optional(),
   includeAnswers: z.boolean().optional(),
   includeExplanations: z.boolean().optional(),
+  enableVisuals: z.boolean().optional(),
+  visualStyle: z.enum(['auto', 'vector', 'biology-color']).optional(),
   provider: z.enum(['gemini', 'openai']).optional(),
   questionTypes: z.array(z.object({
     type: z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),

@@ -3,6 +3,7 @@ import { VisualContentAnalyzer, VisualContentRequirement, SubjectAnalysisResult 
 import { ImageGenerationService } from './imageGeneration.service';
 import { GeminiAIService } from './ai.service';
 import logger from '../utils/logger';
+import { PromptPolicyService } from './promptPolicy.service';
 
 const prisma = new PrismaClient();
 
@@ -270,14 +271,17 @@ export class VisualQuestionGenerator {
    */
   private static buildVisualAwarePrompt(params: VisualQuestionRequest, visualEnhancement: string): string {
     const { subject, chapter, difficulty, type, count, concepts, exclude_patterns, classLevel, extraCommands } = params;
+    const difficultyProfile = PromptPolicyService.getDifficultyProfile(difficulty);
 
-    const basePrompt = `Generate ${count} ${difficulty} level ${type} questions for ${classLevel || 'high school'} ${subject} Chapter: ${chapter}.
+    const basePrompt = `Generate ${count} ${difficultyProfile.canonicalBand.toLowerCase()} ${type} questions for ${classLevel || 'high school'} ${subject} Chapter: ${chapter}.
 
 ${visualEnhancement}
 
 Each question should be designed to work with visual aids like diagrams, graphs, or illustrations when appropriate.
 
-Include step-by-step solutions and explanations that reference visual elements when relevant.`;
+Include step-by-step solutions and explanations that reference visual elements when relevant.
+
+${PromptPolicyService.buildDifficultyContract(difficulty)}`;
 
     let prompt = basePrompt;
 
@@ -379,22 +383,24 @@ For questions that would benefit from visual aids, include phrases like "refer t
   private static generateEnhancedMockQuestions(params: VisualQuestionRequest): any[] {
     const { subject, chapter, difficulty, type, count } = params;
     const questions = [];
+    const difficultyScore = PromptPolicyService.getDifficultyScore(difficulty);
+    const difficultyBand = PromptPolicyService.getDifficultyProfile(difficulty).canonicalBand;
 
     for (let i = 1; i <= count; i++) {
       if (type === 'multiple-choice') {
         questions.push({
-          question: `Visual-enhanced ${difficulty} ${subject} question ${i} about ${chapter}. Refer to the diagram for additional context.`,
+          question: `Visual-enhanced ${difficultyBand.toLowerCase()} ${subject} question ${i} about ${chapter}. Refer to the diagram for additional context.`,
           options: ['Option A', 'Option B', 'Option C', 'Option D'],
           correct_answer: 'Option A',
           explanation: `This explanation references visual elements that help understand the ${chapter} concept in ${subject}.`,
-          difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3
+          difficulty_score: difficultyScore
         });
       } else {
         questions.push({
-          question: `Analyze the visual representation of ${chapter} in ${subject} (${difficulty} level).`,
+          question: `Analyze the visual representation of ${chapter} in ${subject} (${difficultyBand.toLowerCase()} level).`,
           correct_answer: `Sample answer referencing visual elements for question ${i}`,
           explanation: `This explanation incorporates visual analysis of ${chapter} concepts.`,
-          difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3
+          difficulty_score: difficultyScore
         });
       }
     }

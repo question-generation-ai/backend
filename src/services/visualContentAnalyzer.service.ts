@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import logger from '../utils/logger';
+import { PromptPolicyService } from './promptPolicy.service';
 
 const prisma = new PrismaClient();
 
@@ -105,12 +106,14 @@ export class VisualContentAnalyzer {
     const subjectKey = subject.toLowerCase() as keyof typeof this.SUBJECT_PATTERNS;
     const patterns = this.SUBJECT_PATTERNS[subjectKey];
 
+    const normalizedDifficulty = PromptPolicyService.normalizeDifficultyLabel(difficulty);
+
     if (!patterns) {
       return {
         subject,
         chapter,
         visualRequirements: [],
-        complexity: difficulty as any,
+        complexity: normalizedDifficulty === 'hard' ? 'complex' : normalizedDifficulty === 'medium' ? 'medium' : 'simple',
         recommendedApproach: 'ai'
       };
     }
@@ -139,7 +142,7 @@ export class VisualContentAnalyzer {
     }
 
     // Determine complexity and approach
-    const complexity = this.determineComplexity(visualRequirements, difficulty);
+    const complexity = this.determineComplexity(visualRequirements, normalizedDifficulty);
     const recommendedApproach = this.determineApproach(visualRequirements);
 
     logger.info(`Visual analysis for ${subject}: Found ${visualRequirements.length} visual requirements`);

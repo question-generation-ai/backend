@@ -13,6 +13,7 @@ Create a file named `.env` (if it doesn't exist) and add:
 ```env
 # Your Gemini Configuration
 GEMINI_API_KEY=AIzaSyAQ.Ab8RN6KRTuGzu-OkrW-9fr2SlqQd3wpwXsvWu3tG0AKrHsBPbQ
+GEMINI_MODEL=gemini-2.5-flash
 GOOGLE_CLOUD_PROJECT=project-b8658063-ae09-4686-b81
 
 # AI Image Generation

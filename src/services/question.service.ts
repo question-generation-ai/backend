@@ -8,6 +8,8 @@ import { ImageGenerationService } from './imageGeneration.service';
 import { EnhancedPromptsService } from './enhancedPrompts.service';
 import { QuestionValidatorService, ValidationResult } from './questionValidator.service';
 import { QualityMonitoringService } from './qualityMonitoring.service';
+import { EducationalVisualService } from './educationalVisual.service';
+import { PromptPolicyService } from './promptPolicy.service';
 
 const prisma = new PrismaClient();
 
@@ -52,7 +54,50 @@ async function validateAndFilterQuestions(
 }
 
 function buildPrompt(params: any): string {
-  return EnhancedPromptsService.buildCompletePrompt(params);
+  return EnhancedPromptsService.buildCompletePrompt({
+    ...params,
+    compactMode: Boolean(params.compactMode)
+  });
+}
+
+function splitIntoBatches<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
+function createBatchRequests(params: any): any[] {
+  const count = Math.max(1, Number(params.count || 1));
+  const plan = PromptPolicyService.getQuestionGenerationPlan(params.type, count);
+  const requestedIndexes = Array.from({ length: count }, (_, index) => index);
+  const batches = splitIntoBatches(requestedIndexes, plan.batchSize);
+
+  return batches.map((batch, batchIndex) => ({
+    ...params,
+    count: batch.length,
+    compactMode: plan.compactMode,
+    _batchMeta: {
+      index: batchIndex + 1,
+      total: batches.length,
+      size: batch.length,
+      reason: plan.reason,
+      oversized: plan.oversized,
+    }
+  }));
+}
+
+function getGenerationOptions(params: any) {
+  const count = Math.max(1, Number(params.count || 1));
+  const type = String(params.type || '').toLowerCase();
+  const compactMode = Boolean(params.compactMode);
+  const heavy = ['case-study', 'problem-solving', 'long-answer', 'reasoning-based', 'application-based'].includes(type);
+
+  return {
+    temperature: compactMode ? 0.2 : 0.35,
+    maxTokens: heavy ? Math.min(1800, 700 + count * 350) : Math.min(2200, 500 + count * 220),
+  };
 }
 
 // Function to detect if a question needs an image
@@ -140,13 +185,33 @@ function extractImageDescription(question: any, subject: string): string {
 }
 
 // Function to process questions and add images where needed
-async function processQuestionsWithImages(questions: any[], subject: string): Promise<any[]> {
+async function processQuestionsWithImages(questions: any[], params: any): Promise<any[]> {
   const processedQuestions = [];
+  const subject = params.subject || '';
+  const chapter = params.chapter || '';
 
   for (const question of questions) {
     const processedQuestion = { ...question };
 
-    if (detectImageRequirement(question, subject)) {
+    if (EducationalVisualService.shouldAttachVisual(question, subject, params.enableVisuals)) {
+      const visual = EducationalVisualService.create(question, subject, chapter);
+      processedQuestion.imageUrl = visual.imageUrl;
+      processedQuestion.imageMetadata = {
+        kind: visual.kind,
+        title: visual.title,
+        alt: visual.alt,
+        caption: visual.caption,
+        source: 'deterministic-svg',
+        vector: true
+      };
+      processedQuestion.visual = visual;
+      processedQuestion.visualContent = {
+        imageUrl: visual.imageUrl,
+        description: visual.caption,
+        type: visual.kind,
+        generationType: 'template'
+      };
+    } else if (params.enableVisuals !== false && detectImageRequirement(question, subject)) {
       try {
         const imageDescription = extractImageDescription(question, subject);
         logger.info(`Generating image for question: ${imageDescription.substring(0, 50)}...`);
@@ -160,7 +225,17 @@ async function processQuestionsWithImages(questions: any[], subject: string): Pr
 
         const imageResult = await ImageGenerationService.generateQuestionImage(imageRequest);
         processedQuestion.imageUrl = imageResult.imageUrl;
-        processedQuestion.imageMetadata = imageResult.metadata;
+        processedQuestion.imageMetadata = {
+          ...imageResult.metadata,
+          source: imageResult.generationType
+        };
+        processedQuestion.visual = {
+          title: imageResult.metadata?.templateId ? 'Question Visual' : 'Generated Question Visual',
+          alt: imageDescription,
+          kind: 'vector-diagram',
+          imageUrl: imageResult.imageUrl,
+          caption: imageDescription
+        };
 
         logger.info(`Image generated successfully for question`);
       } catch (error: any) {
@@ -553,16 +628,18 @@ function parseAIResponse(aiResponse: any): any[] {
 function generateMockQuestions(params: any): any[] {
   const { subject, chapter, difficulty, type, count } = params;
   const questions = [];
+  const difficultyScore = PromptPolicyService.getDifficultyScore(difficulty);
+  const difficultyBand = PromptPolicyService.getDifficultyProfile(difficulty).canonicalBand;
 
   for (let i = 1; i <= count; i++) {
     if (type === 'multiple-choice') {
       questions.push({
         id: `mock-${i}`,
-        question: `Sample ${difficulty} ${subject} question ${i} about ${chapter}?`,
+        question: `Sample ${difficultyBand.toLowerCase()} ${subject} question ${i} about ${chapter}?`,
         options: ['Option A', 'Option B', 'Option C', 'Option D'],
         correct_answer: 'Option A',
         explanation: `This is a sample explanation for question ${i}`,
-        difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+        difficulty_score: difficultyScore,
         subject,
         chapter,
         type
@@ -570,10 +647,10 @@ function generateMockQuestions(params: any): any[] {
     } else if (type === 'short-answer' || type === 'long-answer' || type === 'reasoning-based' || type === 'application-based' || type === 'analytical' || type === 'case-study' || type === 'problem-solving') {
       questions.push({
         id: `mock-${i}`,
-        question: `Explain a key concept of ${chapter} in ${subject} (${difficulty} level).`,
+        question: `Explain a key concept of ${chapter} in ${subject} (${difficultyBand.toLowerCase()} level).`,
         correct_answer: null,
         explanation: `This is a sample explanation for question ${i}`,
-        difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+        difficulty_score: difficultyScore,
         subject,
         chapter,
         type
@@ -585,7 +662,7 @@ function generateMockQuestions(params: any): any[] {
         options: undefined,
         correct_answer: 'sample term',
         explanation: `The blank refers to a key term in ${chapter}.`,
-        difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+        difficulty_score: difficultyScore,
         subject,
         chapter,
         type
@@ -593,10 +670,10 @@ function generateMockQuestions(params: any): any[] {
     } else {
       questions.push({
         id: `mock-${i}`,
-        question: `True or False: Sample ${difficulty} ${subject} statement about ${chapter}.`,
+        question: `True or False: Sample ${difficultyBand.toLowerCase()} ${subject} statement about ${chapter}.`,
         correct_answer: 'True',
         explanation: `This is a sample explanation for question ${i}`,
-        difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+        difficulty_score: difficultyScore,
         subject,
         chapter,
         type
@@ -674,6 +751,49 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
   debug?: any;
 }> {
   const MAX_RETRIES = 2;
+  const batchRequests = retryCount === 0 ? createBatchRequests(params) : [params];
+
+  if (retryCount === 0 && batchRequests.length > 1) {
+    logger.info(`[QuestionGen] Splitting request into ${batchRequests.length} batches for ${params.type}`);
+
+    const batchResults = [];
+    for (const batchParams of batchRequests) {
+      batchResults.push(await generateQuestions(batchParams, 0));
+    }
+
+    const mergedQuestions = batchResults.flatMap((result) => result.questions || []);
+    const validationStats = batchResults.map((result) => result.metadata?.validation).filter(Boolean);
+
+    return {
+      questions: mergedQuestions,
+      metadata: {
+        source: 'ai',
+        provider: params.provider || 'gemini',
+        batching: {
+          used: true,
+          batchCount: batchRequests.length,
+          plan: PromptPolicyService.getQuestionGenerationPlan(params.type, params.count),
+          requestedCount: params.count,
+          returnedCount: mergedQuestions.length,
+        },
+        validation: {
+          total: validationStats.reduce((sum: number, item: any) => sum + (item.total || 0), 0),
+          valid: validationStats.reduce((sum: number, item: any) => sum + (item.valid || 0), 0),
+          invalid: validationStats.reduce((sum: number, item: any) => sum + (item.invalid || 0), 0),
+          retries: validationStats.reduce((max: number, item: any) => Math.max(max, item.retries || 0), 0),
+        }
+      },
+      cache_info: { hit: false, key: 'batched-questiongen' },
+      debug: {
+        batches: batchResults.map((result, index) => ({
+          batch: index + 1,
+          questionCount: result.questions?.length || 0,
+          validation: result.metadata?.validation || null,
+        }))
+      }
+    };
+  }
+
   const cacheKey = getCacheKey(params);
   let cacheInfo = { hit: false, key: cacheKey };
 
@@ -691,6 +811,7 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
     // Select provider
     const provider = (params.provider || '').toLowerCase();
     let prompt = buildPrompt(params);
+    const generationOptions = getGenerationOptions(params);
 
     // If this is a retry, add specific instructions to fix previous issues
     if (retryCount > 0 && params._previousIssues) {
@@ -703,11 +824,11 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
     let usedProvider: 'gemini' | 'openai' = 'gemini';
 
     if (provider === 'openai') {
-      aiResponse = await OpenAIService.generateContent(prompt);
+      aiResponse = await OpenAIService.generateContent(prompt, 3, generationOptions);
       usedProvider = 'openai';
     } else {
       // default to gemini
-      aiResponse = await GeminiAIService.generateContent(prompt);
+      aiResponse = await GeminiAIService.generateContent(prompt, 3, generationOptions);
       usedProvider = 'gemini';
     }
 
@@ -779,7 +900,7 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
         // Combine valid questions with supplemental ones
         if (supplementResult.questions && supplementResult.questions.length > 0) {
           const combinedQuestions = [...valid, ...supplementResult.questions];
-          const questionsWithImages = await processQuestionsWithImages(combinedQuestions, params.subject);
+          const questionsWithImages = await processQuestionsWithImages(combinedQuestions, params);
 
           return {
             questions: questionsWithImages,
@@ -813,7 +934,7 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
     }
 
     // Process only valid questions to add images where needed
-    const questionsWithImages = await processQuestionsWithImages(valid, params.subject);
+    const questionsWithImages = await processQuestionsWithImages(valid, params);
 
     return {
       questions: questionsWithImages,
@@ -885,15 +1006,14 @@ function extractValidationIssues(invalidQuestions: any[]): string[] {
 // Helper function to build retry instructions from previous issues
 function buildRetryInstructions(issues: string[]): string {
   return `
-IMPORTANT CORRECTIONS REQUIRED:
-The previous attempt had validation issues. Please fix the following problems:
+RETRY CORRECTIONS:
 ${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
 
 CRITICAL REQUIREMENTS:
 - Return ONLY a valid JSON array (no markdown code blocks, no explanatory text)
 - Each question MUST have: "question", "correct_answer", "explanation", "difficulty_score"
 - For multiple-choice: include "options" array with 4 choices
-- Do not include any text before or after the JSON array
+- Keep every field concise; do not expand background narration
 - Ensure the response starts with '[' and ends with ']'
 `;
 }
