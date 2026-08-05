@@ -1,0 +1,163 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ALLOWED_IMAGE_SPEC_ELEMENTS = exports.IMAGE_SPEC_TYPES = void 0;
+exports.isImageSpecType = isImageSpecType;
+exports.normalizeImageSpec = normalizeImageSpec;
+exports.normalizeVisualContract = normalizeVisualContract;
+exports.buildImageSpecVocabulary = buildImageSpecVocabulary;
+exports.IMAGE_SPEC_TYPES = [
+    'force_diagram',
+    'circuit',
+    'coordinate_graph',
+    'geometry',
+    'wave',
+    'molecular',
+    'cell_diagram',
+    'ray_optics',
+    'generic',
+];
+exports.ALLOWED_IMAGE_SPEC_ELEMENTS = {
+    force_diagram: [
+        'block',
+        'inclined_plane',
+        'surface',
+        'normal_force',
+        'weight',
+        'friction',
+        'applied_force_horizontal',
+        'applied_force_vertical',
+        'applied_force_angled',
+        'tension',
+    ],
+    circuit: [
+        'battery',
+        'cell',
+        'resistor',
+        'switch',
+        'bulb',
+        'ammeter',
+        'voltmeter',
+        'capacitor',
+        'wire_loop',
+        'series_branch',
+        'parallel_branch',
+    ],
+    coordinate_graph: [
+        'x_axis',
+        'y_axis',
+        'origin',
+        'grid',
+        'line',
+        'parabola',
+        'circle',
+        'point',
+        'slope_triangle',
+    ],
+    geometry: [
+        'triangle',
+        'right_triangle',
+        'circle',
+        'chord',
+        'tangent',
+        'rectangle',
+        'square',
+        'polygon',
+        'height',
+        'angle_marker',
+    ],
+    wave: [
+        'baseline',
+        'crest',
+        'trough',
+        'amplitude_marker',
+        'wavelength_marker',
+        'transverse_wave',
+        'longitudinal_wave',
+    ],
+    molecular: [
+        'central_atom',
+        'bond_single',
+        'bond_double',
+        'bond_triple',
+        'electron_pair',
+        'ring_hexagon',
+        'terminal_atom',
+    ],
+    cell_diagram: [
+        'cell_wall',
+        'cell_membrane',
+        'nucleus',
+        'mitochondrion',
+        'chloroplast',
+        'vacuole',
+        'cytoplasm',
+    ],
+    ray_optics: [
+        'principal_axis',
+        'convex_lens',
+        'concave_lens',
+        'concave_mirror',
+        'convex_mirror',
+        'incident_ray',
+        'refracted_ray',
+        'reflected_ray',
+        'focus',
+        'object_arrow',
+        'image_arrow',
+    ],
+    generic: ['generic_object'],
+};
+function isImageSpecType(value) {
+    return typeof value === 'string' && exports.IMAGE_SPEC_TYPES.includes(value);
+}
+function normalizeStringArray(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .filter((item) => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+function normalizeImageSpec(spec) {
+    if (!spec || typeof spec !== 'object') {
+        return null;
+    }
+    const candidate = spec;
+    if (!isImageSpecType(candidate.type)) {
+        return null;
+    }
+    const type = candidate.type;
+    if (!Array.isArray(candidate.elements) || !Array.isArray(candidate.labels)) {
+        return null;
+    }
+    const allowed = new Set(exports.ALLOWED_IMAGE_SPEC_ELEMENTS[type]);
+    const rawElements = normalizeStringArray(candidate.elements);
+    const labels = normalizeStringArray(candidate.labels);
+    if (rawElements.length !== candidate.elements.length || labels.length !== candidate.labels.length) {
+        return null;
+    }
+    if (rawElements.some((element) => !allowed.has(element))) {
+        return null;
+    }
+    const elements = rawElements;
+    if (elements.length === 0) {
+        return null;
+    }
+    return { type, elements, labels };
+}
+function normalizeVisualContract(question) {
+    const imageSpec = normalizeImageSpec(question.image_spec);
+    const needsImage = question.needs_image === true && imageSpec !== null;
+    return {
+        ...question,
+        needs_image: needsImage,
+        image_spec: needsImage ? imageSpec : null,
+    };
+}
+function buildImageSpecVocabulary() {
+    return exports.IMAGE_SPEC_TYPES.map((type) => {
+        const tokens = exports.ALLOWED_IMAGE_SPEC_ELEMENTS[type].map((token) => `"${token}"`).join(', ');
+        return `- ${type}: [${tokens}]`;
+    }).join('\n');
+}

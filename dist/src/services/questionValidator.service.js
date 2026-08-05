@@ -201,9 +201,19 @@ class QuestionValidatorService {
      */
     static validateExplanation(question) {
         const issues = [];
-        const explanation = question.explanation || '';
+        const hasExplanationField = Object.prototype.hasOwnProperty.call(question, 'explanation');
+        const explanation = typeof question.explanation === 'string' ? question.explanation : '';
         // Explanations are optional to reduce tokens; no penalty if missing
-        if (!explanation) {
+        if (!hasExplanationField) {
+            return issues;
+        }
+        if (typeof question.explanation !== 'string' || explanation.trim().length === 0) {
+            issues.push({
+                severity: 'critical',
+                category: 'Explanation',
+                message: 'Explanation must be a non-empty string when provided',
+                suggestion: 'Either omit explanation or provide a short non-empty explanation'
+            });
             return issues;
         }
         // Check for educational value words

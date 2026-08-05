@@ -5,10 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DiagnosticsService = void 0;
 const client_1 = require("@prisma/client");
-const visualQuestionGenerator_service_1 = require("./visualQuestionGenerator.service");
 const imageGeneration_service_1 = require("./imageGeneration.service");
 const template_service_1 = require("./template.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+const question_service_1 = require("./question.service");
 const prisma = new client_1.PrismaClient();
 class DiagnosticsService {
     /**
@@ -187,10 +187,11 @@ class DiagnosticsService {
      * Test complete visual workflow
      */
     static async testVisualWorkflow(diagnostics) {
+        var _a;
         try {
             const startTime = Date.now();
             // Test complete visual question generation
-            const result = await visualQuestionGenerator_service_1.VisualQuestionGenerator.generateVisualQuestions({
+            const result = await (0, question_service_1.generateQuestions)({
                 subject: 'mathematics',
                 chapter: 'coordinate geometry',
                 difficulty: 'medium',
@@ -205,7 +206,7 @@ class DiagnosticsService {
                 diagnostics.systemHealth.visualWorkflow = 'healthy';
                 diagnostics.statistics.totalQuestionsGenerated = 1;
                 const question = result.questions[0];
-                if (question.visualContent) {
+                if (question.imageUrl || question.visualContent) {
                     diagnostics.workflow.completedSteps.push('Visual content integration test');
                 }
                 else {
@@ -216,12 +217,9 @@ class DiagnosticsService {
                 diagnostics.systemHealth.visualWorkflow = 'warning';
                 diagnostics.workflow.recommendations.push('Visual workflow generated no questions');
             }
-            // Check diagnostics from the workflow
-            if (result.diagnostics) {
-                if (result.diagnostics.errors.length > 0) {
-                    diagnostics.workflow.failedSteps.push('Visual workflow had errors');
-                    diagnostics.workflow.recommendations.push(`Workflow errors: ${result.diagnostics.errors.join(', ')}`);
-                }
+            if ((_a = result.metadata) === null || _a === void 0 ? void 0 : _a.error) {
+                diagnostics.workflow.failedSteps.push('Visual workflow had errors');
+                diagnostics.workflow.recommendations.push(`Workflow errors: ${result.metadata.error}`);
             }
         }
         catch (error) {

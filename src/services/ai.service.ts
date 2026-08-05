@@ -110,6 +110,7 @@ export class GeminiAIService {
               topK: 40,
               topP: 0.95,
               maxOutputTokens: options.maxTokens ?? MAX_OUTPUT_TOKENS,
+              responseMimeType: 'application/json',
             }
           },
           {
@@ -123,6 +124,11 @@ export class GeminiAIService {
 
         const responseData = response.data;
         logger.info(`Gemini API success via ${model}`);
+
+        const finishReason = responseData?.candidates?.[0]?.finishReason;
+        if (finishReason && finishReason !== 'STOP') {
+          logger.warn(`Gemini response finished with reason: ${finishReason}`);
+        }
 
         // Validate response has content
         if (!responseData?.candidates?.[0]?.content?.parts?.[0]?.text) {

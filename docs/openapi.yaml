@@ -75,6 +75,99 @@ paths:
       responses:
         '200':
           description: Questions generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GeneratedQuestion'
+              examples:
+                textOnly:
+                  summary: Pure calculation item without a diagram
+                  value:
+                    questions:
+                      - question: A 5 kg block accelerates at 2 m/s². Calculate the force.
+                        type: multiple-choice
+                        options: [5 N, 10 N, 15 N, 20 N]
+                        correct_answer: 10 N
+                        explanation: Use F = ma.
+                        difficulty_score: 2
+                        needs_image: false
+                        image_spec: null
+  /questions/generate-visual:
+    post:
+      summary: Compatibility alias for visual question generation
+      description: Uses the same unified generation pipeline as `/questions/generate` with deterministic SVG visuals when `needs_image` and `image_spec` are returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject:
+                  type: string
+                chapter:
+                  type: string
+                difficulty:
+                  type: string
+                type:
+                  type: string
+                count:
+                  type: integer
+                enableVisuals:
+                  type: boolean
+      responses:
+        '200':
+          description: Questions generated through the unified pipeline
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GeneratedQuestion'
+              examples:
+                deterministicVisual:
+                  summary: Circuit topology item with a deterministic SVG
+                  value:
+                    questions:
+                      - question: Compare the current in the parallel branches of the circuit shown.
+                        type: multiple-choice
+                        options: [Equal, Left is greater, Right is greater, Zero]
+                        correct_answer: Equal
+                        explanation: Parallel branches share the same potential difference.
+                        difficulty_score: 3
+                        needs_image: true
+                        image_spec:
+                          type: circuit
+                          elements: [battery, resistor, wire_loop, parallel_branch]
+                          labels: [12V]
+                        imageUrl: data:image/svg+xml;base64,...
+                        imageMetadata:
+                          type: circuit
+                          source: deterministic-svg
+                          spec:
+                            type: circuit
+                            elements: [battery, resistor, wire_loop, parallel_branch]
+                            labels: [12V]
+                          vector: true
+                        visual:
+                          title: Question Visual
+                          alt: Compare the current in the parallel branches of the circuit shown.
+                          kind: vector-diagram
+                          imageUrl: data:image/svg+xml;base64,...
+                          caption: 12V
+                        visualContent:
+                          imageUrl: data:image/svg+xml;base64,...
+                          description: 12V
+                          type: circuit
+                          generationType: deterministic-svg
   /questions/search:
     get:
       summary: Search questions
@@ -200,4 +293,115 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT 
+      bearerFormat: JWT
+  schemas:
+    ImageSpec:
+      type: object
+      required:
+        - type
+        - elements
+        - labels
+      properties:
+        type:
+          type: string
+          enum:
+            - force_diagram
+            - circuit
+            - coordinate_graph
+            - geometry
+            - wave
+            - molecular
+            - cell_diagram
+            - ray_optics
+            - generic
+        elements:
+          type: array
+          items:
+            type: string
+        labels:
+          type: array
+          items:
+            type: string
+    GeneratedQuestion:
+      type: object
+      properties:
+        question:
+          type: string
+        type:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        correct_answer:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: 'null'
+        explanation:
+          type: string
+        difficulty_score:
+          type: number
+        needs_image:
+          type: boolean
+        image_spec:
+          oneOf:
+            - $ref: '#/components/schemas/ImageSpec'
+            - type: 'null'
+        imageUrl:
+          type: string
+          description: Legacy compatibility field containing the deterministic SVG data URL.
+        imageMetadata:
+          type: object
+          description: Spec-derived metadata used by downstream PDF/HTML consumers.
+          properties:
+            type:
+              type: string
+              enum:
+                - force_diagram
+                - circuit
+                - coordinate_graph
+                - geometry
+                - wave
+                - molecular
+                - cell_diagram
+                - ray_optics
+                - generic
+            source:
+              type: string
+              enum:
+                - deterministic-svg
+            spec:
+              $ref: '#/components/schemas/ImageSpec'
+            vector:
+              type: boolean
+        visual:
+          type: object
+          description: Legacy compatibility wrapper for rendered visuals.
+          properties:
+            title:
+              type: string
+            alt:
+              type: string
+            kind:
+              type: string
+            imageUrl:
+              type: string
+            caption:
+              type: string
+        visualContent:
+          type: object
+          description: Legacy compatibility metadata for the rendered visual.
+          properties:
+            imageUrl:
+              type: string
+            description:
+              type: string
+            type:
+              type: string
+            generationType:
+              type: string
+              enum:
+                - deterministic-svg
