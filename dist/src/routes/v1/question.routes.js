@@ -35,7 +35,6 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const question_service_1 = require("../../services/question.service");
-const visualQuestionGenerator_service_1 = require("../../services/visualQuestionGenerator.service");
 const htmlPdf_service_1 = require("../../services/htmlPdf.service");
 const zod_1 = require("zod");
 const validate_1 = require("../../middleware/validate");
@@ -52,6 +51,7 @@ const generateSchema = zod_1.z.object({
     classLevel: zod_1.z.union([zod_1.z.string(), zod_1.z.number().transform(String)]).optional(),
     extraCommands: zod_1.z.string().optional(),
     enableVisuals: zod_1.z.boolean().optional(),
+    visualStyle: zod_1.z.enum(['auto', 'vector', 'biology-color']).optional(),
     title: zod_1.z.string().optional(),
     provider: zod_1.z.enum(['gemini', 'openai']).optional(),
 });
@@ -92,11 +92,14 @@ const mixedQuestionSchema = zod_1.z.object({
     chapter: zod_1.z.string(),
     difficulty: zod_1.z.enum(['easy', 'medium', 'hard']),
     classLevel: zod_1.z.union([zod_1.z.string(), zod_1.z.number().transform(String)]).optional(),
+    concepts: zod_1.z.array(zod_1.z.string()).optional(),
     extraCommands: zod_1.z.string().optional(),
     title: zod_1.z.string().optional(),
     customTitle: zod_1.z.string().optional(),
     includeAnswers: zod_1.z.boolean().optional(),
     includeExplanations: zod_1.z.boolean().optional(),
+    enableVisuals: zod_1.z.boolean().optional(),
+    visualStyle: zod_1.z.enum(['auto', 'vector', 'biology-color']).optional(),
     provider: zod_1.z.enum(['gemini', 'openai']).optional(),
     questionTypes: zod_1.z.array(zod_1.z.object({
         type: zod_1.z.enum(['multiple-choice', 'short-answer', 'true-false', 'long-answer', 'reasoning-based', 'application-based', 'analytical', 'fill-in-the-blank', 'case-study', 'problem-solving']),
@@ -228,9 +231,10 @@ router.post('/quality-report', async (req, res) => {
 });
 // Visual question generation endpoint
 router.post('/generate-visual', (0, validate_1.validate)(generateSchema), async (req, res) => {
+    var _a;
     try {
-        const params = req.body;
-        const result = await visualQuestionGenerator_service_1.VisualQuestionGenerator.generateVisualQuestions(params);
+        const params = { ...req.body, enableVisuals: (_a = req.body.enableVisuals) !== null && _a !== void 0 ? _a : true };
+        const result = await (0, question_service_1.generateQuestions)(params);
         res.json(result);
     }
     catch (err) {

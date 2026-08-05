@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { generateQuestions, searchQuestions, bulkGenerateQuestions, getQuestionTemplates, updateQuestionFeedback } from '../../services/question.service';
-import { VisualQuestionGenerator } from '../../services/visualQuestionGenerator.service';
 import { HtmlPdfService } from '../../services/htmlPdf.service';
 import { z } from 'zod';
 import { validate } from '../../middleware/validate';
@@ -68,6 +67,7 @@ const mixedQuestionSchema = z.object({
   chapter: z.string(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   classLevel: z.union([z.string(), z.number().transform(String)]).optional(),
+  concepts: z.array(z.string()).optional(),
   extraCommands: z.string().optional(),
   title: z.string().optional(),
   customTitle: z.string().optional(),
@@ -216,8 +216,8 @@ router.post('/quality-report', async (req, res) => {
 // Visual question generation endpoint
 router.post('/generate-visual', validate(generateSchema), async (req, res) => {
   try {
-    const params = req.body;
-    const result = await VisualQuestionGenerator.generateVisualQuestions(params);
+    const params = { ...req.body, enableVisuals: req.body.enableVisuals ?? true };
+    const result = await generateQuestions(params);
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

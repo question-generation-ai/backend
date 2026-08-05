@@ -4,17 +4,40 @@ import redisClient from '../utils/redisClient';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import { OpenAIService } from './openai.service';
-import { ImageGenerationService } from './imageGeneration.service';
 import { EnhancedPromptsService } from './enhancedPrompts.service';
 import { QuestionValidatorService, ValidationResult } from './questionValidator.service';
 import { QualityMonitoringService } from './qualityMonitoring.service';
-import { EducationalVisualService } from './educationalVisual.service';
 import { PromptPolicyService } from './promptPolicy.service';
+import { ImageSpecRouter } from './imageSpecRouter.service';
+import { normalizeImageSpec, normalizeVisualContract } from '../types/imageSpec';
 
 const prisma = new PrismaClient();
 
-function getFormatInstructions(type: string): string {
-  return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
+type RawShape = 'array' | 'object' | 'unknown';
+type ParseStage = 'direct' | 'repaired' | 'incremental' | 'failed';
+type NormalizedShape = 'wrapped_questions' | 'bare_array' | 'single_object' | 'rejected';
+type DropReason =
+  | 'failed_json_parse'
+  | 'failed_json_repair'
+  | 'no_question_candidates'
+  | 'normalizer_rejected'
+  | 'missing_required_field'
+  | 'invalid_field_type'
+  | 'validation_rejected';
+
+interface NormalizationResult {
+  questions: any[];
+  normalizedShape: NormalizedShape;
+  dropReason?: DropReason;
+  droppedCount: number;
+}
+
+interface ParseDiagnostics {
+  rawShape: RawShape;
+  parseStage: ParseStage;
+  normalizedShape: NormalizedShape;
+  dropReason?: DropReason;
+  droppedCount: number;
 }
 
 // Validate and filter questions using the validator service
@@ -95,152 +118,212 @@ function getGenerationOptions(params: any) {
   const heavy = ['case-study', 'problem-solving', 'long-answer', 'reasoning-based', 'application-based'].includes(type);
 
   return {
-    temperature: compactMode ? 0.2 : 0.35,
+    // gpt-5.6-luna only supports default temperature (1) — omitted intentionally.
     maxTokens: heavy ? Math.min(1800, 700 + count * 350) : Math.min(2200, 500 + count * 220),
   };
 }
 
-// Function to detect if a question needs an image
-function detectImageRequirement(question: any, subject: string): boolean {
-  const questionText = question.question?.toLowerCase() || '';
-
-  // TIER 1: Explicit visual requests - always generate image
-  const explicitVisualPhrases = [
-    'refer to the diagram', 'refer to the figure', 'refer to the graph',
-    'as shown in the', 'in the figure', 'in the diagram', 'in the graph',
-    'draw a', 'sketch a', 'plot the', 'graph the',
-    'shown below', 'given diagram', 'given figure', 'given graph',
-    'from the diagram', 'from the figure', 'from the graph',
-    'observe the', 'look at the', 'using the diagram',
-    'label the', 'identify in the'
-  ];
-
-  if (explicitVisualPhrases.some(phrase => questionText.includes(phrase))) {
-    return true;
+export function normalizeQuestionVisualContract(question: any): any {
+  if (!question || typeof question !== 'object') {
+    return question;
   }
 
-  // TIER 2: Subject-specific visual indicators (more restrictive)
-  const subjectVisualPatterns: { [key: string]: RegExp[] } = {
-    physics: [
-      /circuit\s+diagram/i, /free\s*body\s*diagram/i, /force\s+diagram/i,
-      /ray\s+diagram/i, /wave\s+(?:diagram|pattern)/i,
-      /electric\s+field/i, /magnetic\s+field/i
-    ],
-    chemistry: [
-      /molecular\s+structure/i, /lewis\s+(?:dot\s+)?structure/i,
-      /benzene\s+ring/i, /(?:water|h2o)\s+molecule/i,
-      /orbital\s+diagram/i, /periodic\s+table/i,
-      /reaction\s+mechanism/i, /apparatus/i
-    ],
-    biology: [
-      /cell\s+(?:structure|diagram)/i, /anatomy\s+of/i,
-      /(?:digestive|nervous|circulatory)\s+system/i,
-      /cross\s*section/i, /(?:plant|animal)\s+cell/i,
-      /life\s+cycle/i, /food\s+chain/i, /food\s+web/i
-    ],
-    mathematics: [
-      /plot\s+(?:the\s+)?(?:function|graph|equation)/i,
-      /graph\s+of\s+(?:the\s+)?(?:function|equation)/i,
-      /coordinate\s+(?:system|plane|geometry)/i,
-      /geometric\s+(?:figure|shape|construction)/i,
-      /(?:right|isosceles|equilateral)\s+triangle/i,
-      /venn\s+diagram/i, /number\s+line/i,
-      /unit\s+circle/i, /parabola/i, /hyperbola/i, /ellipse/i
-    ]
-  };
-
-  const patterns = subjectVisualPatterns[subject.toLowerCase()] || [];
-  if (patterns.some(pattern => pattern.test(questionText))) {
-    return true;
-  }
-
-  // TIER 3: Avoid false positives - these words alone should NOT trigger images
-  // Words like "function", "equation", "structure" are too generic
-  // They need additional context to require an image
-
-  return false;
+  return normalizeVisualContract(question);
 }
 
-// Function to extract image description from question
-function extractImageDescription(question: any, subject: string): string {
-  const questionText = question.question || '';
+function hasMinimumQuestionShape(question: any): boolean {
+  return getMinimumShapeDropReason(question) === null;
+}
 
-  // Try to extract specific image requirements with context
-  const patterns = [
-    /(?:draw|sketch|plot|graph)\s+(?:a|an|the)?\s*([^.!?]{10,60})/i,
-    /(?:diagram|figure|graph|illustration)\s+(?:of|showing|depicting)\s+([^.!?]{10,60})/i,
-    /refer\s+to\s+the\s+(\w+(?:\s+\w+){0,5})/i
-  ];
+function getMinimumShapeDropReason(question: any): DropReason | null {
+  if (!question || typeof question !== 'object') {
+    return 'invalid_field_type';
+  }
 
-  for (const pattern of patterns) {
-    const match = questionText.match(pattern);
-    if (match && match[1]) {
-      return match[1].trim();
+  if (typeof question.question !== 'string' || question.question.trim().length < 10) {
+    return typeof question.question === 'undefined' ? 'missing_required_field' : 'invalid_field_type';
+  }
+
+  if (typeof question.explanation !== 'undefined') {
+    if (typeof question.explanation !== 'string') {
+      return 'invalid_field_type';
+    }
+    if (question.explanation.trim().length === 0) {
+      return 'missing_required_field';
     }
   }
 
-  // Fallback: extract the main subject of the question
-  const firstSentence = questionText.split(/[.!?]/)[0] || '';
-  return firstSentence.substring(0, 100);
+  if (typeof question.difficulty_score !== 'number' || Number.isNaN(question.difficulty_score)) {
+    return typeof question.difficulty_score === 'undefined' ? 'missing_required_field' : 'invalid_field_type';
+  }
+
+  const type = String(question.type || '').toLowerCase();
+  if (type === 'multiple-choice') {
+    if (!Array.isArray(question.options) || question.options.length !== 4) {
+      return Array.isArray(question.options) ? 'invalid_field_type' : 'missing_required_field';
+    }
+    if (
+      question.correct_answer === undefined ||
+      question.correct_answer === null ||
+      (typeof question.correct_answer === 'string' && question.correct_answer.trim().length === 0)
+    ) {
+      return 'missing_required_field';
+    }
+  }
+
+  return null;
+}
+
+function normalizeQuestionArray(questions: any[]): { questions: any[]; droppedCount: number; dropReasons: DropReason[] } {
+  const normalizedQuestions: any[] = [];
+  const dropReasons: DropReason[] = [];
+
+  for (const question of questions) {
+    const dropReason = getMinimumShapeDropReason(question);
+    if (dropReason) {
+      dropReasons.push(dropReason);
+      continue;
+    }
+
+    normalizedQuestions.push(normalizeQuestionVisualContract(question));
+  }
+
+  return {
+    questions: normalizedQuestions,
+    droppedCount: questions.length - normalizedQuestions.length,
+    dropReasons,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPromotableSingleQuestion(value: unknown): value is Record<string, any> {
+  if (!isPlainObject(value) || typeof value.question !== 'string') {
+    return false;
+  }
+
+  return Boolean(value.type || value.correct_answer || value.options);
+}
+
+function normalizeParsedQuestions(parsed: unknown): NormalizationResult {
+  if (Array.isArray(parsed)) {
+    const normalized = normalizeQuestionArray(parsed);
+    return {
+      questions: normalized.questions,
+      normalizedShape: 'bare_array',
+      dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+      droppedCount: normalized.droppedCount,
+    };
+  }
+
+  if (isPlainObject(parsed) && Array.isArray(parsed.questions)) {
+    const normalized = normalizeQuestionArray(parsed.questions);
+    return {
+      questions: normalized.questions,
+      normalizedShape: 'wrapped_questions',
+      dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+      droppedCount: normalized.droppedCount,
+    };
+  }
+
+  if (isPromotableSingleQuestion(parsed)) {
+    const normalized = normalizeQuestionArray([parsed]);
+    return {
+      questions: normalized.questions,
+      normalizedShape: 'single_object',
+      dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+      droppedCount: normalized.droppedCount,
+    };
+  }
+
+  return {
+    questions: [],
+    normalizedShape: 'rejected',
+    dropReason: 'normalizer_rejected',
+    droppedCount: 1,
+  };
+}
+
+function findJsonRootStart(cleanText: string): { index: number; rawShape: RawShape } {
+  const objectStart = cleanText.indexOf('{');
+  const arrayStart = cleanText.indexOf('[');
+
+  if (objectStart === -1 && arrayStart === -1) {
+    return { index: -1, rawShape: 'unknown' };
+  }
+
+  if (objectStart === -1) {
+    return { index: arrayStart, rawShape: 'array' };
+  }
+
+  if (arrayStart === -1) {
+    return { index: objectStart, rawShape: 'object' };
+  }
+
+  return objectStart < arrayStart
+    ? { index: objectStart, rawShape: 'object' }
+    : { index: arrayStart, rawShape: 'array' };
+}
+
+function logParseDiagnostics(diagnostics: ParseDiagnostics): void {
+  const fields = [
+    `raw_shape=${diagnostics.rawShape}`,
+    `parse_stage=${diagnostics.parseStage}`,
+    `normalized_shape=${diagnostics.normalizedShape}`,
+    `dropped_count=${diagnostics.droppedCount}`,
+  ];
+
+  if (diagnostics.dropReason) {
+    fields.push(`drop_reason=${diagnostics.dropReason}`);
+  }
+
+  logger.info(`Question parse diagnostics: ${fields.join(' ')}`);
 }
 
 // Function to process questions and add images where needed
-async function processQuestionsWithImages(questions: any[], params: any): Promise<any[]> {
+export async function processQuestionsWithImages(questions: any[], params: any): Promise<any[]> {
   const processedQuestions = [];
-  const subject = params.subject || '';
-  const chapter = params.chapter || '';
 
   for (const question of questions) {
-    const processedQuestion = { ...question };
+    const processedQuestion = normalizeQuestionVisualContract({ ...question });
 
-    if (EducationalVisualService.shouldAttachVisual(question, subject, params.enableVisuals)) {
-      const visual = EducationalVisualService.create(question, subject, chapter);
-      processedQuestion.imageUrl = visual.imageUrl;
-      processedQuestion.imageMetadata = {
-        kind: visual.kind,
-        title: visual.title,
-        alt: visual.alt,
-        caption: visual.caption,
-        source: 'deterministic-svg',
-        vector: true
-      };
-      processedQuestion.visual = visual;
-      processedQuestion.visualContent = {
-        imageUrl: visual.imageUrl,
-        description: visual.caption,
-        type: visual.kind,
-        generationType: 'template'
-      };
-    } else if (params.enableVisuals !== false && detectImageRequirement(question, subject)) {
+    if (params.enableVisuals !== false && processedQuestion.needs_image && processedQuestion.image_spec) {
       try {
-        const imageDescription = extractImageDescription(question, subject);
-        logger.info(`Generating image for question: ${imageDescription.substring(0, 50)}...`);
+        const imageUrl = ImageSpecRouter.render(processedQuestion.image_spec);
+        const normalizedSpec = normalizeImageSpec(processedQuestion.image_spec);
+        if (!normalizedSpec) {
+          processedQuestions.push({
+            ...processedQuestion,
+            needs_image: false,
+            image_spec: null,
+          });
+          continue;
+        }
 
-        const imageRequest = {
-          questionContent: imageDescription,
-          subject: subject.toLowerCase(),
-          complexity: 'medium' as const,
-          preferredType: 'auto' as const
-        };
-
-        const imageResult = await ImageGenerationService.generateQuestionImage(imageRequest);
-        processedQuestion.imageUrl = imageResult.imageUrl;
+        processedQuestion.imageUrl = imageUrl;
         processedQuestion.imageMetadata = {
-          ...imageResult.metadata,
-          source: imageResult.generationType
+          type: normalizedSpec.type,
+          source: 'deterministic-svg',
+          spec: normalizedSpec,
+          vector: true,
         };
         processedQuestion.visual = {
-          title: imageResult.metadata?.templateId ? 'Question Visual' : 'Generated Question Visual',
-          alt: imageDescription,
+          title: 'Question Visual',
+          alt: processedQuestion.question || 'Question visual',
           kind: 'vector-diagram',
-          imageUrl: imageResult.imageUrl,
-          caption: imageDescription
+          imageUrl,
+          caption: normalizedSpec.labels.join(', ') || normalizedSpec.elements.join(', ')
         };
-
-        logger.info(`Image generated successfully for question`);
+        processedQuestion.visualContent = {
+          imageUrl,
+          description: processedQuestion.visual.caption,
+          type: normalizedSpec.type,
+          generationType: 'deterministic-svg'
+        };
       } catch (error: any) {
-        logger.warn(`Failed to generate image for question: ${error.message}`);
-        // Continue without image
+        logger.warn(`SVG render failed for type ${processedQuestion.image_spec.type}: ${error.message}`);
       }
     }
 
@@ -491,9 +574,9 @@ function parseAIResponse(aiResponse: any): any[] {
     // Trim whitespace
     cleanText = cleanText.trim();
 
-    // Find the first complete JSON object/array
-    let jsonStart = cleanText.indexOf('[');
-    if (jsonStart === -1) jsonStart = cleanText.indexOf('{');
+    // Find the first complete JSON object/array from the earliest opener
+    const root = findJsonRootStart(cleanText);
+    let jsonStart = root.index;
 
     if (jsonStart !== -1) {
       // Find the matching closing bracket/brace
@@ -545,20 +628,20 @@ function parseAIResponse(aiResponse: any): any[] {
     // ATTEMPT 1: Standard JSON parsing
     try {
       const parsed = JSON.parse(cleanText);
+      const normalized = normalizeParsedQuestions(parsed);
+      logParseDiagnostics({
+        rawShape: root.rawShape,
+        parseStage: 'direct',
+        normalizedShape: normalized.normalizedShape,
+        dropReason: normalized.dropReason,
+        droppedCount: normalized.droppedCount,
+      });
 
-      // Handle different response formats
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-      if (parsed.questions && Array.isArray(parsed.questions)) {
-        return parsed.questions;
-      }
-      if (parsed.question) {
-        return [parsed];
+      if (normalized.questions.length > 0) {
+        return normalized.questions;
       }
 
-      // If it's a single object, wrap it in an array
-      return [parsed];
+      throw new Error(`Normalization rejected parsed payload (${normalized.dropReason || 'normalizer_rejected'})`);
     } catch (parseErr) {
       logger.warn(`Standard JSON parse failed: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
 
@@ -569,59 +652,55 @@ function parseAIResponse(aiResponse: any): any[] {
         const parsed = JSON.parse(repairedText);
 
         logger.info('JSON repair successful!');
+        const normalized = normalizeParsedQuestions(parsed);
+        logParseDiagnostics({
+          rawShape: root.rawShape,
+          parseStage: 'repaired',
+          normalizedShape: normalized.normalizedShape,
+          dropReason: normalized.dropReason,
+          droppedCount: normalized.droppedCount,
+        });
 
-        // Handle different response formats
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-        if (parsed.questions && Array.isArray(parsed.questions)) {
-          return parsed.questions;
-        }
-        if (parsed.question) {
-          return [parsed];
+        if (normalized.questions.length > 0) {
+          return normalized.questions;
         }
 
-        return [parsed];
+        throw new Error(`Normalization rejected repaired payload (${normalized.dropReason || 'normalizer_rejected'})`);
       } catch (repairErr) {
         logger.warn(`JSON repair parse failed: ${repairErr instanceof Error ? repairErr.message : repairErr}`);
 
         // ATTEMPT 3: Incremental extraction
         const incrementalResults = extractValidQuestionsFromText(text);
         if (incrementalResults.length > 0) {
+          logParseDiagnostics({
+            rawShape: root.rawShape,
+            parseStage: 'incremental',
+            normalizedShape: 'bare_array',
+            droppedCount: 0,
+          });
           logger.info(`Incremental parsing recovered ${incrementalResults.length} questions`);
-          return incrementalResults;
+          return normalizeQuestionArray(incrementalResults).questions;
         }
+
+        logParseDiagnostics({
+          rawShape: root.rawShape,
+          parseStage: 'failed',
+          normalizedShape: 'rejected',
+          dropReason: 'failed_json_repair',
+          droppedCount: 0,
+        });
 
         // All attempts failed, throw the original error
         throw parseErr;
       }
     }
   } catch (err) {
+    logger.warn('Question parse diagnostics: raw_shape=unknown parse_stage=failed normalized_shape=rejected dropped_count=0 drop_reason=failed_json_parse');
     console.log('Failed to parse AI response:', err);
-    // If parsing fails, try to extract questions from the text
-    try {
-      const text = aiResponse?.candidates?.[0]?.content?.parts?.[0]?.text || aiResponse?.choices?.[0]?.message?.content;
-      if (text) {
-        // Try to extract the actual question content from the markdown
-        let questionText = text;
-        if (text.includes('"question":')) {
-          const match = text.match(/"question"\s*:\s*"([^"]+)"/);
-          if (match) {
-            questionText = match[1];
-          }
-        }
-
-        return [{
-          question: questionText.substring(0, 200) + (questionText.length > 200 ? '...' : ''),
-          correct_answer: null,
-          explanation: 'This is an AI generated question',
-          difficulty_score: 2
-        }];
-      }
-    } catch (fallbackErr) {
-      console.log('Fallback parsing also failed:', fallbackErr);
-    }
-    return [{ error: 'Failed to parse AI response', details: err instanceof Error ? err.message : err }];
+    return [{
+      error: 'Failed to parse AI response',
+      details: err instanceof Error ? err.message : err
+    }];
   }
 }
 
@@ -640,6 +719,8 @@ function generateMockQuestions(params: any): any[] {
         correct_answer: 'Option A',
         explanation: `This is a sample explanation for question ${i}`,
         difficulty_score: difficultyScore,
+        needs_image: false,
+        image_spec: null,
         subject,
         chapter,
         type
@@ -651,6 +732,8 @@ function generateMockQuestions(params: any): any[] {
         correct_answer: null,
         explanation: `This is a sample explanation for question ${i}`,
         difficulty_score: difficultyScore,
+        needs_image: false,
+        image_spec: null,
         subject,
         chapter,
         type
@@ -663,6 +746,8 @@ function generateMockQuestions(params: any): any[] {
         correct_answer: 'sample term',
         explanation: `The blank refers to a key term in ${chapter}.`,
         difficulty_score: difficultyScore,
+        needs_image: false,
+        image_spec: null,
         subject,
         chapter,
         type
@@ -674,6 +759,8 @@ function generateMockQuestions(params: any): any[] {
         correct_answer: 'True',
         explanation: `This is a sample explanation for question ${i}`,
         difficulty_score: difficultyScore,
+        needs_image: false,
+        image_spec: null,
         subject,
         chapter,
         type
@@ -685,9 +772,12 @@ function generateMockQuestions(params: any): any[] {
 }
 
 function getCacheKey(params: any): string {
-  // Add timestamp to ensure fresh cache keys
-  const timestamp = Date.now();
-  const hash = crypto.createHash('sha256').update(JSON.stringify({ ...params, timestamp })).digest('hex');
+  const {
+    _previousIssues,
+    _batchMeta,
+    ...cacheableParams
+  } = params || {};
+  const hash = crypto.createHash('sha256').update(JSON.stringify(cacheableParams)).digest('hex');
   return `questiongen:${hash}`;
 }
 
@@ -797,13 +887,15 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
   const cacheKey = getCacheKey(params);
   let cacheInfo = { hit: false, key: cacheKey };
 
-  // Temporarily disable caching to ensure fresh responses
-  // const cached = await redisClient.get(cacheKey);
-  // if (cached) {
-  //   logger.info(`Cache hit for key: ${cacheKey}`);
-  //   cacheInfo.hit = true;
-  //   return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
-  // }
+  const canReadCache = typeof (redisClient as any)?.get === 'function';
+  if (canReadCache) {
+    const cached = await (redisClient as any).get(cacheKey);
+    if (cached) {
+      logger.info(`Cache hit for key: ${cacheKey}`);
+      cacheInfo.hit = true;
+      return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
+    }
+  }
 
   logger.info(`Cache miss for key: ${cacheKey}`);
 
@@ -936,6 +1028,11 @@ export async function generateQuestions(params: any, retryCount: number = 0): Pr
     // Process only valid questions to add images where needed
     const questionsWithImages = await processQuestionsWithImages(valid, params);
 
+    const canWriteCache = typeof (redisClient as any)?.setEx === 'function';
+    if (canWriteCache) {
+      await (redisClient as any).setEx(cacheKey, 60 * 60, JSON.stringify(questionsWithImages));
+    }
+
     return {
       questions: questionsWithImages,
       metadata: {
@@ -1059,6 +1156,24 @@ export async function generateMixedQuestions(params: any) {
       logger.info(`[MixedGen] Requested ${questionType.count} ${questionType.type} questions`);
 
       const result = await generateQuestions(typeParams);
+
+      if (result.metadata?.source === 'error') {
+        logger.warn(`[MixedGen] Aborting after ${questionType.type} generation failed: ${result.metadata.error}`);
+        return {
+          questions: [],
+          metadata: {
+            ...metadata,
+            source: 'error',
+            error: result.metadata.error,
+            details: result.metadata.details,
+            failedType: questionType.type,
+            totalQuestions: 0,
+            questionTypes: questionTypes.length,
+            mixed: true
+          },
+          cache_info: { hit: false, key: 'mixed-questions' }
+        };
+      }
 
       if (result.questions && Array.isArray(result.questions)) {
         logger.info(`[MixedGen] Generated ${result.questions.length} ${questionType.type} questions`);

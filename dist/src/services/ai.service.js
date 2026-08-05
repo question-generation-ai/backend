@@ -6,57 +6,43 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeminiAIService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const logger_1 = __importDefault(require("../utils/logger"));
-// Prefer the public Generative Language API with API Key. Vertex endpoints require a different auth flow.
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
-const RAW_GEMINI_API_URL = process.env.GEMINI_API_URL; // optional override
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 // Production settings
 const MAX_OUTPUT_TOKENS = parseInt(process.env.GEMINI_MAX_TOKENS || '8192'); // Increased from 2048
 const DEFAULT_TIMEOUT = parseInt(process.env.GEMINI_TIMEOUT || '120000'); // 2 minutes
 const RATE_LIMIT_RETRY_DELAY = 5000; // 5 seconds base delay for rate limits
-function isVertexUrl(url) {
-    return /\/projects\//.test(url) || /aiplatform\.googleapis\.com/.test(url) || /\/publishers\//.test(url);
-}
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404]);
 function buildPublicEndpoint(model) {
     return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 }
-function buildPublicEndpointWithVersion(model, version) {
-    return `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent`;
+function extractModelName(value) {
+    let model = value.trim();
+    model = model.replace(/\?.*$/, '');
+    model = model.replace(/:generatecontent$/i, '');
+    const modelsIdx = model.lastIndexOf('/models/');
+    if (modelsIdx !== -1) {
+        model = model.substring(modelsIdx + '/models/'.length);
+    }
+    model = model.replace(/^models\//, '');
+    model = model.replace(/^publishers\/google\//, '');
+    return model;
 }
-// Normalize model names to use versions supported by the Gemini API v1beta
 function normalizeModelName(model) {
     if (!model)
-        return 'gemini-2.5-pro';
-    let m = model.trim().toLowerCase();
-    // Strip any trailing :generateContent if provided mistakenly
-    m = m.replace(/:generatecontent$/i, '');
-    // If model contains Vertex-style prefixes, extract the part after /models/
-    const modelsIdx = m.lastIndexOf('/models/');
-    if (modelsIdx !== -1) {
-        m = m.substring(modelsIdx + '/models/'.length);
-    }
-    // Remove any leading publishers/google/ if present
-    m = m.replace(/^publishers\/google\//, '');
-    // Map to available model names in v1beta API (verified January 2026)
-    // Note: gemini-3.0-pro does NOT exist, only gemini-3-pro-preview
-    if (m.includes('gemini-3-pro-preview'))
-        return 'gemini-3-pro-preview';
-    if (m.includes('gemini-3-flash-preview'))
-        return 'gemini-3-flash-preview';
-    if (m.includes('gemini-3-pro') || m.includes('gemini-3.0-pro'))
-        return 'gemini-3-pro-preview'; // Map to preview
+        return DEFAULT_GEMINI_MODEL;
+    const m = extractModelName(model).toLowerCase();
     if (m.includes('gemini-2.5-pro'))
         return 'gemini-2.5-pro';
     if (m.includes('gemini-2.5-flash'))
         return 'gemini-2.5-flash';
-    if (m.includes('gemini-2.0-flash'))
-        return 'gemini-2.0-flash';
-    if (m.includes('gemini-flash-latest'))
-        return 'gemini-flash-latest';
-    if (m.includes('gemini-pro-latest'))
-        return 'gemini-pro-latest';
-    // Default to stable 2.5 pro model (most reliable)
-    return 'gemini-2.5-pro';
+    logger_1.default.warn(`Unsupported or deprecated GEMINI_MODEL '${model}' normalized to '${DEFAULT_GEMINI_MODEL}'.`);
+    return DEFAULT_GEMINI_MODEL;
+}
+function resolveGeminiModel() {
+    if (process.env.GEMINI_API_URL) {
+        logger_1.default.warn('GEMINI_API_URL is deprecated and ignored. Configure GEMINI_MODEL instead.');
+    }
+    return normalizeModelName(process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
 }
 // Extract retry delay from rate limit error response
 function extractRetryDelay(errorData) {
@@ -88,118 +74,52 @@ function extractRetryDelay(errorData) {
     return RATE_LIMIT_RETRY_DELAY; // Default delay
 }
 class GeminiAIService {
-    static async generateContent(prompt, maxRetries = 3) {
-        var _a, _b, _c, _d, _e;
-        if (!GEMINI_API_KEY) {
+    static async generateContent(prompt, maxRetries = 3, options = {}) {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        const apiKey = process.env.GEMINI_API_KEY || '';
+        if (!apiKey) {
             throw new Error('Missing GEMINI_API_KEY. Please set GEMINI_API_KEY in your .env file.');
         }
-        // Determine endpoint; if a Vertex endpoint is provided with API key auth, auto-correct to public endpoint
-        const effectiveModel = normalizeModelName(GEMINI_MODEL);
-        if (effectiveModel !== GEMINI_MODEL) {
-            logger_1.default.warn(`GEMINI_MODEL '${GEMINI_MODEL}' normalized to public model '${effectiveModel}' for Generative Language API.`);
-        }
-        let endpoint = RAW_GEMINI_API_URL || buildPublicEndpoint(effectiveModel);
-        if (endpoint && isVertexUrl(endpoint)) {
-            logger_1.default.warn('GEMINI_API_URL appears to be a Vertex AI endpoint. API key auth will 404/401 on Vertex. Switching to public Generative Language API endpoint.');
-            endpoint = buildPublicEndpoint(effectiveModel);
-        }
-        // Prepare candidate endpoints with fallback models (verified working in v1beta API, Jan 2026)
-        const candidateModels = [
-            effectiveModel,
-            'gemini-2.5-pro', // Stable, most capable
-            'gemini-2.5-flash', // Stable, fast
-            'gemini-2.0-flash', // Stable alternative
-            'gemini-flash-latest', // Latest flash alias
-            'gemini-pro-latest', // Latest pro alias
-            'gemini-3-pro-preview' // Preview only, last resort
-        ];
-        const uniqueModels = Array.from(new Set(candidateModels));
-        const candidateEndpoints = [];
-        if (!RAW_GEMINI_API_URL || isVertexUrl(RAW_GEMINI_API_URL)) {
-            // Use v1beta API which supports all Gemini models
-            for (const m of uniqueModels) {
-                candidateEndpoints.push(buildPublicEndpointWithVersion(m, 'v1beta'));
-            }
-        }
-        else {
-            candidateEndpoints.push(endpoint);
-        }
-        logger_1.default.info(`Gemini endpoint: ${candidateEndpoints[0]}`);
+        const model = resolveGeminiModel();
+        const endpoint = buildPublicEndpoint(model);
+        logger_1.default.info(`Gemini model: ${model}`);
         let attempt = 0;
         let lastError = null;
         while (attempt < maxRetries) {
             try {
-                // Try each candidate endpoint until one succeeds or all fail for this attempt
-                let responseData;
-                let success = false;
-                let lastErrThisAttempt = null;
-                let rateLimitDelay = 0;
-                for (const ep of candidateEndpoints) {
-                    try {
-                        const response = await axios_1.default.post(ep, {
-                            contents: [
+                const response = await axios_1.default.post(endpoint, {
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
                                 {
-                                    role: 'user',
-                                    parts: [
-                                        {
-                                            text: prompt
-                                        }
-                                    ]
+                                    text: prompt
                                 }
-                            ],
-                            generationConfig: {
-                                temperature: 0.7,
-                                topK: 40,
-                                topP: 0.95,
-                                maxOutputTokens: MAX_OUTPUT_TOKENS, // Increased for complex questions
-                            }
-                        }, {
-                            timeout: DEFAULT_TIMEOUT,
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'x-goog-api-key': GEMINI_API_KEY
-                            }
-                        });
-                        logger_1.default.info(`Gemini API success via ${ep}`);
-                        responseData = response.data;
-                        success = true;
-                        break;
-                    }
-                    catch (innerErr) {
-                        lastErrThisAttempt = innerErr;
-                        if (innerErr.response) {
-                            const { status, data } = innerErr.response;
-                            const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
-                            // Handle rate limiting (429) specially
-                            if (status === 429) {
-                                rateLimitDelay = extractRetryDelay(data);
-                                logger_1.default.warn(`Rate limited on ${ep}. Will retry after ${rateLimitDelay}ms`);
-                                // Don't try other endpoints immediately for rate limits - they might be rate limited too
-                                // Instead, wait and retry
-                                continue;
-                            }
-                            logger_1.default.error(`Gemini API error via ${ep} (attempt ${attempt + 1}) - status ${status}: ${dataStr.substring(0, 500)}`);
-                            if (status === 404) {
-                                logger_1.default.error('A 404 from Gemini often indicates an incorrect model or endpoint. Trying next candidate...');
-                            }
+                            ]
                         }
-                        else {
-                            logger_1.default.error(`Gemini API network error via ${ep} (attempt ${attempt + 1}): ${innerErr.message}`);
-                        }
+                    ],
+                    generationConfig: {
+                        temperature: (_a = options.temperature) !== null && _a !== void 0 ? _a : 0.25,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: (_b = options.maxTokens) !== null && _b !== void 0 ? _b : MAX_OUTPUT_TOKENS,
+                        responseMimeType: 'application/json',
                     }
-                }
-                // If rate limited, wait and continue to next attempt
-                if (!success && rateLimitDelay > 0) {
-                    logger_1.default.info(`Waiting ${rateLimitDelay}ms before retry due to rate limit...`);
-                    await new Promise((res) => setTimeout(res, rateLimitDelay));
-                    attempt++;
-                    continue;
-                }
-                if (!success) {
-                    throw lastErrThisAttempt || new Error('All Gemini endpoint candidates failed');
+                }, {
+                    timeout: DEFAULT_TIMEOUT,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': apiKey
+                    }
+                });
+                const responseData = response.data;
+                logger_1.default.info(`Gemini API success via ${model}`);
+                const finishReason = (_d = (_c = responseData === null || responseData === void 0 ? void 0 : responseData.candidates) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.finishReason;
+                if (finishReason && finishReason !== 'STOP') {
+                    logger_1.default.warn(`Gemini response finished with reason: ${finishReason}`);
                 }
                 // Validate response has content
-                if (!((_e = (_d = (_c = (_b = (_a = responseData === null || responseData === void 0 ? void 0 : responseData.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text)) {
+                if (!((_j = (_h = (_g = (_f = (_e = responseData === null || responseData === void 0 ? void 0 : responseData.candidates) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.content) === null || _g === void 0 ? void 0 : _g.parts) === null || _h === void 0 ? void 0 : _h[0]) === null || _j === void 0 ? void 0 : _j.text)) {
                     logger_1.default.warn('Gemini API returned empty response, retrying...');
                     throw new Error('Empty response from Gemini API');
                 }
@@ -220,7 +140,10 @@ class GeminiAIService {
                         continue;
                     }
                     if (status === 404) {
-                        logger_1.default.error('A 404 from Gemini often indicates an incorrect endpoint. If you are using a Vertex AI URL, switch to the public Generative Language API endpoint or configure proper Google Cloud auth.');
+                        logger_1.default.error(`A 404 from Gemini indicates the configured model '${model}' is unavailable for this API key. Update GEMINI_MODEL instead of relying on fallback probing.`);
+                    }
+                    if (NON_RETRYABLE_STATUSES.has(status)) {
+                        throw err;
                     }
                 }
                 else {

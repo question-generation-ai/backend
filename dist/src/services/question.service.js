@@ -3,6 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeQuestionVisualContract = normalizeQuestionVisualContract;
+exports.processQuestionsWithImages = processQuestionsWithImages;
 exports.generateQuestions = generateQuestions;
 exports.searchQuestions = searchQuestions;
 exports.bulkGenerateQuestions = bulkGenerateQuestions;
@@ -11,17 +13,17 @@ exports.updateQuestionFeedback = updateQuestionFeedback;
 exports.generateMixedQuestions = generateMixedQuestions;
 const client_1 = require("@prisma/client");
 const ai_service_1 = require("./ai.service");
+const redisClient_1 = __importDefault(require("../utils/redisClient"));
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const openai_service_1 = require("./openai.service");
-const imageGeneration_service_1 = require("./imageGeneration.service");
 const enhancedPrompts_service_1 = require("./enhancedPrompts.service");
 const questionValidator_service_1 = require("./questionValidator.service");
 const qualityMonitoring_service_1 = require("./qualityMonitoring.service");
+const promptPolicy_service_1 = require("./promptPolicy.service");
+const imageSpecRouter_service_1 = require("./imageSpecRouter.service");
+const imageSpec_1 = require("../types/imageSpec");
 const prisma = new client_1.PrismaClient();
-function getFormatInstructions(type) {
-    return `IMPORTANT OUTPUT FORMAT RULES:\n- Return ONLY a valid JSON array (no markdown, no prose).\n- Use double quotes for all keys and string values.\n- For every item include: \\\n+  {\\n    \"id\": string (optional),\\n    \"question\": string,\\n    \"type\": string,\\n    \"options\": string[] (only for multiple-choice or fill-in-the-blank when applicable),\\n    \"correct_answer\": string | string[] | null,\\n    \"explanation\": string,\\n    \"difficulty_score\": number (1-5)\\n  }\n- Do not wrap in any object; the root must be an array.\n- Tailor fields to the type: \n  * multiple-choice: provide 4 options, use a single-letter or full-text correct_answer.\n  * true-false: no options; correct_answer is \"True\" or \"False\".\n  * short-answer / long-answer / reasoning-based / application-based / analytical / case-study / problem-solving: no options; correct_answer can be a short reference answer or null; ensure explanation is detailed.\n  * fill-in-the-blank: provide options only if multiple blanks have choices; otherwise, no options.`;
-}
 // Validate and filter questions using the validator service
 async function validateAndFilterQuestions(questions, params) {
     const valid = [];
@@ -51,105 +53,215 @@ async function validateAndFilterQuestions(questions, params) {
     return { valid, invalid, validationResults };
 }
 function buildPrompt(params) {
-    return enhancedPrompts_service_1.EnhancedPromptsService.buildCompletePrompt(params);
+    return enhancedPrompts_service_1.EnhancedPromptsService.buildCompletePrompt({
+        ...params,
+        compactMode: Boolean(params.compactMode)
+    });
 }
-// Function to detect if a question needs an image
-function detectImageRequirement(question, subject) {
-    var _a;
-    const questionText = ((_a = question.question) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
-    // TIER 1: Explicit visual requests - always generate image
-    const explicitVisualPhrases = [
-        'refer to the diagram', 'refer to the figure', 'refer to the graph',
-        'as shown in the', 'in the figure', 'in the diagram', 'in the graph',
-        'draw a', 'sketch a', 'plot the', 'graph the',
-        'shown below', 'given diagram', 'given figure', 'given graph',
-        'from the diagram', 'from the figure', 'from the graph',
-        'observe the', 'look at the', 'using the diagram',
-        'label the', 'identify in the'
-    ];
-    if (explicitVisualPhrases.some(phrase => questionText.includes(phrase))) {
-        return true;
+function splitIntoBatches(items, size) {
+    const batches = [];
+    for (let i = 0; i < items.length; i += size) {
+        batches.push(items.slice(i, i + size));
     }
-    // TIER 2: Subject-specific visual indicators (more restrictive)
-    const subjectVisualPatterns = {
-        physics: [
-            /circuit\s+diagram/i, /free\s*body\s*diagram/i, /force\s+diagram/i,
-            /ray\s+diagram/i, /wave\s+(?:diagram|pattern)/i,
-            /electric\s+field/i, /magnetic\s+field/i
-        ],
-        chemistry: [
-            /molecular\s+structure/i, /lewis\s+(?:dot\s+)?structure/i,
-            /benzene\s+ring/i, /(?:water|h2o)\s+molecule/i,
-            /orbital\s+diagram/i, /periodic\s+table/i,
-            /reaction\s+mechanism/i, /apparatus/i
-        ],
-        biology: [
-            /cell\s+(?:structure|diagram)/i, /anatomy\s+of/i,
-            /(?:digestive|nervous|circulatory)\s+system/i,
-            /cross\s*section/i, /(?:plant|animal)\s+cell/i,
-            /life\s+cycle/i, /food\s+chain/i, /food\s+web/i
-        ],
-        mathematics: [
-            /plot\s+(?:the\s+)?(?:function|graph|equation)/i,
-            /graph\s+of\s+(?:the\s+)?(?:function|equation)/i,
-            /coordinate\s+(?:system|plane|geometry)/i,
-            /geometric\s+(?:figure|shape|construction)/i,
-            /(?:right|isosceles|equilateral)\s+triangle/i,
-            /venn\s+diagram/i, /number\s+line/i,
-            /unit\s+circle/i, /parabola/i, /hyperbola/i, /ellipse/i
-        ]
+    return batches;
+}
+function createBatchRequests(params) {
+    const count = Math.max(1, Number(params.count || 1));
+    const plan = promptPolicy_service_1.PromptPolicyService.getQuestionGenerationPlan(params.type, count);
+    const requestedIndexes = Array.from({ length: count }, (_, index) => index);
+    const batches = splitIntoBatches(requestedIndexes, plan.batchSize);
+    return batches.map((batch, batchIndex) => ({
+        ...params,
+        count: batch.length,
+        compactMode: plan.compactMode,
+        _batchMeta: {
+            index: batchIndex + 1,
+            total: batches.length,
+            size: batch.length,
+            reason: plan.reason,
+            oversized: plan.oversized,
+        }
+    }));
+}
+function getGenerationOptions(params) {
+    const count = Math.max(1, Number(params.count || 1));
+    const type = String(params.type || '').toLowerCase();
+    const compactMode = Boolean(params.compactMode);
+    const heavy = ['case-study', 'problem-solving', 'long-answer', 'reasoning-based', 'application-based'].includes(type);
+    return {
+        // gpt-5.6-luna only supports default temperature (1) — omitted intentionally.
+        maxTokens: heavy ? Math.min(1800, 700 + count * 350) : Math.min(2200, 500 + count * 220),
     };
-    const patterns = subjectVisualPatterns[subject.toLowerCase()] || [];
-    if (patterns.some(pattern => pattern.test(questionText))) {
-        return true;
-    }
-    // TIER 3: Avoid false positives - these words alone should NOT trigger images
-    // Words like "function", "equation", "structure" are too generic
-    // They need additional context to require an image
-    return false;
 }
-// Function to extract image description from question
-function extractImageDescription(question, subject) {
-    const questionText = question.question || '';
-    // Try to extract specific image requirements with context
-    const patterns = [
-        /(?:draw|sketch|plot|graph)\s+(?:a|an|the)?\s*([^.!?]{10,60})/i,
-        /(?:diagram|figure|graph|illustration)\s+(?:of|showing|depicting)\s+([^.!?]{10,60})/i,
-        /refer\s+to\s+the\s+(\w+(?:\s+\w+){0,5})/i
-    ];
-    for (const pattern of patterns) {
-        const match = questionText.match(pattern);
-        if (match && match[1]) {
-            return match[1].trim();
+function normalizeQuestionVisualContract(question) {
+    if (!question || typeof question !== 'object') {
+        return question;
+    }
+    return (0, imageSpec_1.normalizeVisualContract)(question);
+}
+function hasMinimumQuestionShape(question) {
+    return getMinimumShapeDropReason(question) === null;
+}
+function getMinimumShapeDropReason(question) {
+    if (!question || typeof question !== 'object') {
+        return 'invalid_field_type';
+    }
+    if (typeof question.question !== 'string' || question.question.trim().length < 10) {
+        return typeof question.question === 'undefined' ? 'missing_required_field' : 'invalid_field_type';
+    }
+    if (typeof question.explanation !== 'undefined') {
+        if (typeof question.explanation !== 'string') {
+            return 'invalid_field_type';
+        }
+        if (question.explanation.trim().length === 0) {
+            return 'missing_required_field';
         }
     }
-    // Fallback: extract the main subject of the question
-    const firstSentence = questionText.split(/[.!?]/)[0] || '';
-    return firstSentence.substring(0, 100);
+    if (typeof question.difficulty_score !== 'number' || Number.isNaN(question.difficulty_score)) {
+        return typeof question.difficulty_score === 'undefined' ? 'missing_required_field' : 'invalid_field_type';
+    }
+    const type = String(question.type || '').toLowerCase();
+    if (type === 'multiple-choice') {
+        if (!Array.isArray(question.options) || question.options.length !== 4) {
+            return Array.isArray(question.options) ? 'invalid_field_type' : 'missing_required_field';
+        }
+        if (question.correct_answer === undefined ||
+            question.correct_answer === null ||
+            (typeof question.correct_answer === 'string' && question.correct_answer.trim().length === 0)) {
+            return 'missing_required_field';
+        }
+    }
+    return null;
+}
+function normalizeQuestionArray(questions) {
+    const normalizedQuestions = [];
+    const dropReasons = [];
+    for (const question of questions) {
+        const dropReason = getMinimumShapeDropReason(question);
+        if (dropReason) {
+            dropReasons.push(dropReason);
+            continue;
+        }
+        normalizedQuestions.push(normalizeQuestionVisualContract(question));
+    }
+    return {
+        questions: normalizedQuestions,
+        droppedCount: questions.length - normalizedQuestions.length,
+        dropReasons,
+    };
+}
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+function isPromotableSingleQuestion(value) {
+    if (!isPlainObject(value) || typeof value.question !== 'string') {
+        return false;
+    }
+    return Boolean(value.type || value.correct_answer || value.options);
+}
+function normalizeParsedQuestions(parsed) {
+    if (Array.isArray(parsed)) {
+        const normalized = normalizeQuestionArray(parsed);
+        return {
+            questions: normalized.questions,
+            normalizedShape: 'bare_array',
+            dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+            droppedCount: normalized.droppedCount,
+        };
+    }
+    if (isPlainObject(parsed) && Array.isArray(parsed.questions)) {
+        const normalized = normalizeQuestionArray(parsed.questions);
+        return {
+            questions: normalized.questions,
+            normalizedShape: 'wrapped_questions',
+            dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+            droppedCount: normalized.droppedCount,
+        };
+    }
+    if (isPromotableSingleQuestion(parsed)) {
+        const normalized = normalizeQuestionArray([parsed]);
+        return {
+            questions: normalized.questions,
+            normalizedShape: 'single_object',
+            dropReason: normalized.questions.length === 0 && normalized.droppedCount > 0 ? normalized.dropReasons[0] : undefined,
+            droppedCount: normalized.droppedCount,
+        };
+    }
+    return {
+        questions: [],
+        normalizedShape: 'rejected',
+        dropReason: 'normalizer_rejected',
+        droppedCount: 1,
+    };
+}
+function findJsonRootStart(cleanText) {
+    const objectStart = cleanText.indexOf('{');
+    const arrayStart = cleanText.indexOf('[');
+    if (objectStart === -1 && arrayStart === -1) {
+        return { index: -1, rawShape: 'unknown' };
+    }
+    if (objectStart === -1) {
+        return { index: arrayStart, rawShape: 'array' };
+    }
+    if (arrayStart === -1) {
+        return { index: objectStart, rawShape: 'object' };
+    }
+    return objectStart < arrayStart
+        ? { index: objectStart, rawShape: 'object' }
+        : { index: arrayStart, rawShape: 'array' };
+}
+function logParseDiagnostics(diagnostics) {
+    const fields = [
+        `raw_shape=${diagnostics.rawShape}`,
+        `parse_stage=${diagnostics.parseStage}`,
+        `normalized_shape=${diagnostics.normalizedShape}`,
+        `dropped_count=${diagnostics.droppedCount}`,
+    ];
+    if (diagnostics.dropReason) {
+        fields.push(`drop_reason=${diagnostics.dropReason}`);
+    }
+    logger_1.default.info(`Question parse diagnostics: ${fields.join(' ')}`);
 }
 // Function to process questions and add images where needed
-async function processQuestionsWithImages(questions, subject) {
+async function processQuestionsWithImages(questions, params) {
     const processedQuestions = [];
     for (const question of questions) {
-        const processedQuestion = { ...question };
-        if (detectImageRequirement(question, subject)) {
+        const processedQuestion = normalizeQuestionVisualContract({ ...question });
+        if (params.enableVisuals !== false && processedQuestion.needs_image && processedQuestion.image_spec) {
             try {
-                const imageDescription = extractImageDescription(question, subject);
-                logger_1.default.info(`Generating image for question: ${imageDescription.substring(0, 50)}...`);
-                const imageRequest = {
-                    questionContent: imageDescription,
-                    subject: subject.toLowerCase(),
-                    complexity: 'medium',
-                    preferredType: 'auto'
+                const imageUrl = imageSpecRouter_service_1.ImageSpecRouter.render(processedQuestion.image_spec);
+                const normalizedSpec = (0, imageSpec_1.normalizeImageSpec)(processedQuestion.image_spec);
+                if (!normalizedSpec) {
+                    processedQuestions.push({
+                        ...processedQuestion,
+                        needs_image: false,
+                        image_spec: null,
+                    });
+                    continue;
+                }
+                processedQuestion.imageUrl = imageUrl;
+                processedQuestion.imageMetadata = {
+                    type: normalizedSpec.type,
+                    source: 'deterministic-svg',
+                    spec: normalizedSpec,
+                    vector: true,
                 };
-                const imageResult = await imageGeneration_service_1.ImageGenerationService.generateQuestionImage(imageRequest);
-                processedQuestion.imageUrl = imageResult.imageUrl;
-                processedQuestion.imageMetadata = imageResult.metadata;
-                logger_1.default.info(`Image generated successfully for question`);
+                processedQuestion.visual = {
+                    title: 'Question Visual',
+                    alt: processedQuestion.question || 'Question visual',
+                    kind: 'vector-diagram',
+                    imageUrl,
+                    caption: normalizedSpec.labels.join(', ') || normalizedSpec.elements.join(', ')
+                };
+                processedQuestion.visualContent = {
+                    imageUrl,
+                    description: processedQuestion.visual.caption,
+                    type: normalizedSpec.type,
+                    generationType: 'deterministic-svg'
+                };
             }
             catch (error) {
-                logger_1.default.warn(`Failed to generate image for question: ${error.message}`);
-                // Continue without image
+                logger_1.default.warn(`SVG render failed for type ${processedQuestion.image_spec.type}: ${error.message}`);
             }
         }
         processedQuestions.push(processedQuestion);
@@ -341,7 +453,7 @@ function extractValidQuestionsFromText(text) {
     }
 }
 function parseAIResponse(aiResponse) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     // Try to extract questions from AI response (Gemini or OpenAI)
     try {
         // Gemini path
@@ -365,10 +477,9 @@ function parseAIResponse(aiResponse) {
         }
         // Trim whitespace
         cleanText = cleanText.trim();
-        // Find the first complete JSON object/array
-        let jsonStart = cleanText.indexOf('[');
-        if (jsonStart === -1)
-            jsonStart = cleanText.indexOf('{');
+        // Find the first complete JSON object/array from the earliest opener
+        const root = findJsonRootStart(cleanText);
+        let jsonStart = root.index;
         if (jsonStart !== -1) {
             // Find the matching closing bracket/brace
             let bracketCount = 0;
@@ -414,18 +525,18 @@ function parseAIResponse(aiResponse) {
         // ATTEMPT 1: Standard JSON parsing
         try {
             const parsed = JSON.parse(cleanText);
-            // Handle different response formats
-            if (Array.isArray(parsed)) {
-                return parsed;
+            const normalized = normalizeParsedQuestions(parsed);
+            logParseDiagnostics({
+                rawShape: root.rawShape,
+                parseStage: 'direct',
+                normalizedShape: normalized.normalizedShape,
+                dropReason: normalized.dropReason,
+                droppedCount: normalized.droppedCount,
+            });
+            if (normalized.questions.length > 0) {
+                return normalized.questions;
             }
-            if (parsed.questions && Array.isArray(parsed.questions)) {
-                return parsed.questions;
-            }
-            if (parsed.question) {
-                return [parsed];
-            }
-            // If it's a single object, wrap it in an array
-            return [parsed];
+            throw new Error(`Normalization rejected parsed payload (${normalized.dropReason || 'normalizer_rejected'})`);
         }
         catch (parseErr) {
             logger_1.default.warn(`Standard JSON parse failed: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
@@ -435,71 +546,70 @@ function parseAIResponse(aiResponse) {
                 const repairedText = repairMalformedJson(cleanText);
                 const parsed = JSON.parse(repairedText);
                 logger_1.default.info('JSON repair successful!');
-                // Handle different response formats
-                if (Array.isArray(parsed)) {
-                    return parsed;
+                const normalized = normalizeParsedQuestions(parsed);
+                logParseDiagnostics({
+                    rawShape: root.rawShape,
+                    parseStage: 'repaired',
+                    normalizedShape: normalized.normalizedShape,
+                    dropReason: normalized.dropReason,
+                    droppedCount: normalized.droppedCount,
+                });
+                if (normalized.questions.length > 0) {
+                    return normalized.questions;
                 }
-                if (parsed.questions && Array.isArray(parsed.questions)) {
-                    return parsed.questions;
-                }
-                if (parsed.question) {
-                    return [parsed];
-                }
-                return [parsed];
+                throw new Error(`Normalization rejected repaired payload (${normalized.dropReason || 'normalizer_rejected'})`);
             }
             catch (repairErr) {
                 logger_1.default.warn(`JSON repair parse failed: ${repairErr instanceof Error ? repairErr.message : repairErr}`);
                 // ATTEMPT 3: Incremental extraction
                 const incrementalResults = extractValidQuestionsFromText(text);
                 if (incrementalResults.length > 0) {
+                    logParseDiagnostics({
+                        rawShape: root.rawShape,
+                        parseStage: 'incremental',
+                        normalizedShape: 'bare_array',
+                        droppedCount: 0,
+                    });
                     logger_1.default.info(`Incremental parsing recovered ${incrementalResults.length} questions`);
-                    return incrementalResults;
+                    return normalizeQuestionArray(incrementalResults).questions;
                 }
+                logParseDiagnostics({
+                    rawShape: root.rawShape,
+                    parseStage: 'failed',
+                    normalizedShape: 'rejected',
+                    dropReason: 'failed_json_repair',
+                    droppedCount: 0,
+                });
                 // All attempts failed, throw the original error
                 throw parseErr;
             }
         }
     }
     catch (err) {
+        logger_1.default.warn('Question parse diagnostics: raw_shape=unknown parse_stage=failed normalized_shape=rejected dropped_count=0 drop_reason=failed_json_parse');
         console.log('Failed to parse AI response:', err);
-        // If parsing fails, try to extract questions from the text
-        try {
-            const text = ((_o = (_m = (_l = (_k = (_j = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.candidates) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.content) === null || _l === void 0 ? void 0 : _l.parts) === null || _m === void 0 ? void 0 : _m[0]) === null || _o === void 0 ? void 0 : _o.text) || ((_r = (_q = (_p = aiResponse === null || aiResponse === void 0 ? void 0 : aiResponse.choices) === null || _p === void 0 ? void 0 : _p[0]) === null || _q === void 0 ? void 0 : _q.message) === null || _r === void 0 ? void 0 : _r.content);
-            if (text) {
-                // Try to extract the actual question content from the markdown
-                let questionText = text;
-                if (text.includes('"question":')) {
-                    const match = text.match(/"question"\s*:\s*"([^"]+)"/);
-                    if (match) {
-                        questionText = match[1];
-                    }
-                }
-                return [{
-                        question: questionText.substring(0, 200) + (questionText.length > 200 ? '...' : ''),
-                        correct_answer: null,
-                        explanation: 'This is an AI generated question',
-                        difficulty_score: 2
-                    }];
-            }
-        }
-        catch (fallbackErr) {
-            console.log('Fallback parsing also failed:', fallbackErr);
-        }
-        return [{ error: 'Failed to parse AI response', details: err instanceof Error ? err.message : err }];
+        return [{
+                error: 'Failed to parse AI response',
+                details: err instanceof Error ? err.message : err
+            }];
     }
 }
 function generateMockQuestions(params) {
     const { subject, chapter, difficulty, type, count } = params;
     const questions = [];
+    const difficultyScore = promptPolicy_service_1.PromptPolicyService.getDifficultyScore(difficulty);
+    const difficultyBand = promptPolicy_service_1.PromptPolicyService.getDifficultyProfile(difficulty).canonicalBand;
     for (let i = 1; i <= count; i++) {
         if (type === 'multiple-choice') {
             questions.push({
                 id: `mock-${i}`,
-                question: `Sample ${difficulty} ${subject} question ${i} about ${chapter}?`,
+                question: `Sample ${difficultyBand.toLowerCase()} ${subject} question ${i} about ${chapter}?`,
                 options: ['Option A', 'Option B', 'Option C', 'Option D'],
                 correct_answer: 'Option A',
                 explanation: `This is a sample explanation for question ${i}`,
-                difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+                difficulty_score: difficultyScore,
+                needs_image: false,
+                image_spec: null,
                 subject,
                 chapter,
                 type
@@ -508,10 +618,12 @@ function generateMockQuestions(params) {
         else if (type === 'short-answer' || type === 'long-answer' || type === 'reasoning-based' || type === 'application-based' || type === 'analytical' || type === 'case-study' || type === 'problem-solving') {
             questions.push({
                 id: `mock-${i}`,
-                question: `Explain a key concept of ${chapter} in ${subject} (${difficulty} level).`,
+                question: `Explain a key concept of ${chapter} in ${subject} (${difficultyBand.toLowerCase()} level).`,
                 correct_answer: null,
                 explanation: `This is a sample explanation for question ${i}`,
-                difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+                difficulty_score: difficultyScore,
+                needs_image: false,
+                image_spec: null,
                 subject,
                 chapter,
                 type
@@ -524,7 +636,9 @@ function generateMockQuestions(params) {
                 options: undefined,
                 correct_answer: 'sample term',
                 explanation: `The blank refers to a key term in ${chapter}.`,
-                difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+                difficulty_score: difficultyScore,
+                needs_image: false,
+                image_spec: null,
                 subject,
                 chapter,
                 type
@@ -533,10 +647,12 @@ function generateMockQuestions(params) {
         else {
             questions.push({
                 id: `mock-${i}`,
-                question: `True or False: Sample ${difficulty} ${subject} statement about ${chapter}.`,
+                question: `True or False: Sample ${difficultyBand.toLowerCase()} ${subject} statement about ${chapter}.`,
                 correct_answer: 'True',
                 explanation: `This is a sample explanation for question ${i}`,
-                difficulty_score: difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3,
+                difficulty_score: difficultyScore,
+                needs_image: false,
+                image_spec: null,
                 subject,
                 chapter,
                 type
@@ -546,9 +662,8 @@ function generateMockQuestions(params) {
     return questions;
 }
 function getCacheKey(params) {
-    // Add timestamp to ensure fresh cache keys
-    const timestamp = Date.now();
-    const hash = crypto_1.default.createHash('sha256').update(JSON.stringify({ ...params, timestamp })).digest('hex');
+    const { _previousIssues, _batchMeta, ...cacheableParams } = params || {};
+    const hash = crypto_1.default.createHash('sha256').update(JSON.stringify(cacheableParams)).digest('hex');
     return `questiongen:${hash}`;
 }
 async function saveQuestionsToDatabase(questions, params) {
@@ -603,20 +718,64 @@ async function saveQuestionsToDatabase(questions, params) {
 async function generateQuestions(params, retryCount = 0) {
     var _a, _b;
     const MAX_RETRIES = 2;
+    const batchRequests = retryCount === 0 ? createBatchRequests(params) : [params];
+    if (retryCount === 0 && batchRequests.length > 1) {
+        logger_1.default.info(`[QuestionGen] Splitting request into ${batchRequests.length} batches for ${params.type}`);
+        const batchResults = [];
+        for (const batchParams of batchRequests) {
+            batchResults.push(await generateQuestions(batchParams, 0));
+        }
+        const mergedQuestions = batchResults.flatMap((result) => result.questions || []);
+        const validationStats = batchResults.map((result) => { var _a; return (_a = result.metadata) === null || _a === void 0 ? void 0 : _a.validation; }).filter(Boolean);
+        return {
+            questions: mergedQuestions,
+            metadata: {
+                source: 'ai',
+                provider: params.provider || 'gemini',
+                batching: {
+                    used: true,
+                    batchCount: batchRequests.length,
+                    plan: promptPolicy_service_1.PromptPolicyService.getQuestionGenerationPlan(params.type, params.count),
+                    requestedCount: params.count,
+                    returnedCount: mergedQuestions.length,
+                },
+                validation: {
+                    total: validationStats.reduce((sum, item) => sum + (item.total || 0), 0),
+                    valid: validationStats.reduce((sum, item) => sum + (item.valid || 0), 0),
+                    invalid: validationStats.reduce((sum, item) => sum + (item.invalid || 0), 0),
+                    retries: validationStats.reduce((max, item) => Math.max(max, item.retries || 0), 0),
+                }
+            },
+            cache_info: { hit: false, key: 'batched-questiongen' },
+            debug: {
+                batches: batchResults.map((result, index) => {
+                    var _a, _b;
+                    return ({
+                        batch: index + 1,
+                        questionCount: ((_a = result.questions) === null || _a === void 0 ? void 0 : _a.length) || 0,
+                        validation: ((_b = result.metadata) === null || _b === void 0 ? void 0 : _b.validation) || null,
+                    });
+                })
+            }
+        };
+    }
     const cacheKey = getCacheKey(params);
     let cacheInfo = { hit: false, key: cacheKey };
-    // Temporarily disable caching to ensure fresh responses
-    // const cached = await redisClient.get(cacheKey);
-    // if (cached) {
-    //   logger.info(`Cache hit for key: ${cacheKey}`);
-    //   cacheInfo.hit = true;
-    //   return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
-    // }
+    const canReadCache = typeof (redisClient_1.default === null || redisClient_1.default === void 0 ? void 0 : redisClient_1.default.get) === 'function';
+    if (canReadCache) {
+        const cached = await redisClient_1.default.get(cacheKey);
+        if (cached) {
+            logger_1.default.info(`Cache hit for key: ${cacheKey}`);
+            cacheInfo.hit = true;
+            return { questions: JSON.parse(cached), metadata: {}, cache_info: cacheInfo };
+        }
+    }
     logger_1.default.info(`Cache miss for key: ${cacheKey}`);
     try {
         // Select provider
         const provider = (params.provider || '').toLowerCase();
         let prompt = buildPrompt(params);
+        const generationOptions = getGenerationOptions(params);
         // If this is a retry, add specific instructions to fix previous issues
         if (retryCount > 0 && params._previousIssues) {
             const retryInstructions = buildRetryInstructions(params._previousIssues);
@@ -626,12 +785,12 @@ async function generateQuestions(params, retryCount = 0) {
         let aiResponse;
         let usedProvider = 'gemini';
         if (provider === 'openai') {
-            aiResponse = await openai_service_1.OpenAIService.generateContent(prompt);
+            aiResponse = await openai_service_1.OpenAIService.generateContent(prompt, 3, generationOptions);
             usedProvider = 'openai';
         }
         else {
             // default to gemini
-            aiResponse = await ai_service_1.GeminiAIService.generateContent(prompt);
+            aiResponse = await ai_service_1.GeminiAIService.generateContent(prompt, 3, generationOptions);
             usedProvider = 'gemini';
         }
         const questions = parseAIResponse(aiResponse);
@@ -691,7 +850,7 @@ async function generateQuestions(params, retryCount = 0) {
                 // Combine valid questions with supplemental ones
                 if (supplementResult.questions && supplementResult.questions.length > 0) {
                     const combinedQuestions = [...valid, ...supplementResult.questions];
-                    const questionsWithImages = await processQuestionsWithImages(combinedQuestions, params.subject);
+                    const questionsWithImages = await processQuestionsWithImages(combinedQuestions, params);
                     return {
                         questions: questionsWithImages,
                         metadata: {
@@ -722,7 +881,11 @@ async function generateQuestions(params, retryCount = 0) {
             logger_1.default.warn(`Quality monitoring failed: ${e}`);
         }
         // Process only valid questions to add images where needed
-        const questionsWithImages = await processQuestionsWithImages(valid, params.subject);
+        const questionsWithImages = await processQuestionsWithImages(valid, params);
+        const canWriteCache = typeof (redisClient_1.default === null || redisClient_1.default === void 0 ? void 0 : redisClient_1.default.setEx) === 'function';
+        if (canWriteCache) {
+            await redisClient_1.default.setEx(cacheKey, 60 * 60, JSON.stringify(questionsWithImages));
+        }
         return {
             questions: questionsWithImages,
             metadata: {
@@ -788,15 +951,14 @@ function extractValidationIssues(invalidQuestions) {
 // Helper function to build retry instructions from previous issues
 function buildRetryInstructions(issues) {
     return `
-IMPORTANT CORRECTIONS REQUIRED:
-The previous attempt had validation issues. Please fix the following problems:
+RETRY CORRECTIONS:
 ${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
 
 CRITICAL REQUIREMENTS:
 - Return ONLY a valid JSON array (no markdown code blocks, no explanatory text)
 - Each question MUST have: "question", "correct_answer", "explanation", "difficulty_score"
 - For multiple-choice: include "options" array with 4 choices
-- Do not include any text before or after the JSON array
+- Keep every field concise; do not expand background narration
 - Ensure the response starts with '[' and ends with ']'
 `;
 }
@@ -817,7 +979,7 @@ async function updateQuestionFeedback(id, feedback) {
     return { success: true, updated_metrics: {} };
 }
 async function generateMixedQuestions(params) {
-    var _a;
+    var _a, _b;
     const { questionTypes, ...baseParams } = params;
     const allQuestions = [];
     const metadata = {
@@ -835,6 +997,23 @@ async function generateMixedQuestions(params) {
             };
             logger_1.default.info(`[MixedGen] Requested ${questionType.count} ${questionType.type} questions`);
             const result = await generateQuestions(typeParams);
+            if (((_a = result.metadata) === null || _a === void 0 ? void 0 : _a.source) === 'error') {
+                logger_1.default.warn(`[MixedGen] Aborting after ${questionType.type} generation failed: ${result.metadata.error}`);
+                return {
+                    questions: [],
+                    metadata: {
+                        ...metadata,
+                        source: 'error',
+                        error: result.metadata.error,
+                        details: result.metadata.details,
+                        failedType: questionType.type,
+                        totalQuestions: 0,
+                        questionTypes: questionTypes.length,
+                        mixed: true
+                    },
+                    cache_info: { hit: false, key: 'mixed-questions' }
+                };
+            }
             if (result.questions && Array.isArray(result.questions)) {
                 logger_1.default.info(`[MixedGen] Generated ${result.questions.length} ${questionType.type} questions`);
                 // Add question type metadata to each question
@@ -845,7 +1024,7 @@ async function generateMixedQuestions(params) {
                 }));
                 allQuestions.push(...questionsWithType);
                 // Track metadata
-                if ((_a = result.metadata) === null || _a === void 0 ? void 0 : _a.provider) {
+                if ((_b = result.metadata) === null || _b === void 0 ? void 0 : _b.provider) {
                     metadata.providers.push(result.metadata.provider);
                 }
                 metadata.questionBreakdown.push({

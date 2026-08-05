@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client';
-import { VisualQuestionGenerator } from './visualQuestionGenerator.service';
 import { ImageGenerationService } from './imageGeneration.service';
 import { TemplateService } from './template.service';
 import logger from '../utils/logger';
+import { generateQuestions } from './question.service';
 
 const prisma = new PrismaClient();
 
@@ -237,7 +237,7 @@ export class DiagnosticsService {
       const startTime = Date.now();
       
       // Test complete visual question generation
-      const result = await VisualQuestionGenerator.generateVisualQuestions({
+      const result = await generateQuestions({
         subject: 'mathematics',
         chapter: 'coordinate geometry',
         difficulty: 'medium',
@@ -255,7 +255,7 @@ export class DiagnosticsService {
         diagnostics.statistics.totalQuestionsGenerated = 1;
         
         const question = result.questions[0];
-        if (question.visualContent) {
+        if (question.imageUrl || question.visualContent) {
           diagnostics.workflow.completedSteps.push('Visual content integration test');
         } else {
           diagnostics.workflow.recommendations.push('Visual content not generated in workflow test');
@@ -265,12 +265,9 @@ export class DiagnosticsService {
         diagnostics.workflow.recommendations.push('Visual workflow generated no questions');
       }
       
-      // Check diagnostics from the workflow
-      if (result.diagnostics) {
-        if (result.diagnostics.errors.length > 0) {
-          diagnostics.workflow.failedSteps.push('Visual workflow had errors');
-          diagnostics.workflow.recommendations.push(`Workflow errors: ${result.diagnostics.errors.join(', ')}`);
-        }
+      if (result.metadata?.error) {
+        diagnostics.workflow.failedSteps.push('Visual workflow had errors');
+        diagnostics.workflow.recommendations.push(`Workflow errors: ${result.metadata.error}`);
       }
       
     } catch (error) {

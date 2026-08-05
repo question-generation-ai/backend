@@ -10,6 +10,13 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = __importDefault(require("../utils/logger"));
 class HtmlPdfService {
+    static getTemplatePath(fileName) {
+        const compiledPath = path_1.default.join(this.TEMPLATES_DIR, fileName);
+        if (fs_1.default.existsSync(compiledPath)) {
+            return compiledPath;
+        }
+        return path_1.default.join(process.cwd(), 'src', 'templates', 'layouts', fileName);
+    }
     // Register Handlebars helpers
     static registerHelpers() {
         // Helper to convert index to letter (0 -> A, 1 -> B, etc.)
@@ -74,7 +81,7 @@ class HtmlPdfService {
             // Register helpers
             this.registerHelpers();
             // Load and compile template
-            const templatePath = path_1.default.join(this.TEMPLATES_DIR, 'question-paper.hbs');
+            const templatePath = this.getTemplatePath('question-paper.hbs');
             const templateSource = fs_1.default.readFileSync(templatePath, 'utf-8');
             const template = handlebars_1.default.compile(templateSource);
             // Group questions into sections
@@ -108,10 +115,10 @@ class HtmlPdfService {
                 format: 'A4',
                 printBackground: true,
                 margin: {
-                    top: '12mm',
-                    right: '10mm',
-                    bottom: '12mm',
-                    left: '10mm'
+                    top: '15mm',
+                    right: '20mm',
+                    bottom: '15mm',
+                    left: '20mm'
                 }
             });
             await browser.close();
@@ -132,7 +139,7 @@ class HtmlPdfService {
             // Register helpers
             this.registerHelpers();
             // Load and compile template
-            const templatePath = path_1.default.join(this.TEMPLATES_DIR, 'answer-key.hbs');
+            const templatePath = this.getTemplatePath('answer-key.hbs');
             const templateSource = fs_1.default.readFileSync(templatePath, 'utf-8');
             const template = handlebars_1.default.compile(templateSource);
             // Group questions into sections
@@ -162,10 +169,10 @@ class HtmlPdfService {
                 format: 'A4',
                 printBackground: true,
                 margin: {
-                    top: '12mm',
-                    right: '10mm',
-                    bottom: '12mm',
-                    left: '10mm'
+                    top: '15mm',
+                    right: '20mm',
+                    bottom: '15mm',
+                    left: '20mm'
                 }
             });
             await browser.close();

@@ -1,6 +1,7 @@
 import logger from '../utils/logger';
 import { getCurriculumStandard, generateCurriculumPrompt, Board, ExamMode } from './curriculum.service';
 import { PromptPolicyService } from './promptPolicy.service';
+import { buildImageSpecVocabulary, IMAGE_SPEC_TYPES } from '../types/imageSpec';
 
 interface QuestionParams {
   subject: string;
@@ -20,7 +21,10 @@ export class EnhancedPromptsService {
     const difficultyProfile = PromptPolicyService.getDifficultyProfile(params.difficulty);
     const qualityChecks = this.getQualityChecklist(params.type);
     const compactMode = Boolean(params.compactMode);
+    const visualSchema = this.getVisualSchema();
 
+    // Source of truth for model output shape. Update provider expectations and parser
+    // compatibility together if this contract changes.
     const prompt = `You are generating structured assessment items for ${params.subject}.
 
 TASK CONTEXT:
@@ -45,34 +49,76 @@ FIELD BUDGET:
 ${PromptPolicyService.buildPromptFieldBudget(params.type, compactMode)}
 
 OUTPUT CONTRACT:
-- return ONLY a JSON array
-- each item must include:
+- return ONLY a JSON object with a top-level "questions" array
+- every item inside "questions" must include:
   "type"
   "question"
   "options" (only when applicable)
   "correct_answer"
   "difficulty_score"
-- include "explanation" only if it can stay within the field budget
+- every item may include:
+  "needs_image"
+  "image_spec"
+  "explanation" only if it can stay within the field budget
 - do not add markdown, prose, commentary, or code fences
 - do not echo the contract
 
+VISUAL CONTRACT:
+${visualSchema}
+
 REFERENCE OBJECT SHAPE:
-[
-  {
-    "type": "${params.type}",
-    "question": "Direct, self-contained item text",
-    "options": ${params.type === 'multiple-choice' ? '["A) ...", "B) ...", "C) ...", "D) ..."]' : 'null'},
-    "correct_answer": "Correct answer",
-    "difficulty_score": ${difficultyProfile.targetDifficultyScore},
-    "explanation": "Short reasoning only if needed",
-    "cognitive_level": "${difficultyProfile.bloomBand}",
-    "real_world_connection": "Optional concise note",
-    "common_mistakes": ["Short mistake pattern"],
-    "prerequisite_concepts": ["Concept 1", "Concept 2"]
-  }
-]`;
+{
+  "questions": [
+    {
+      "type": "${params.type}",
+      "question": "Direct, self-contained item text",
+      "options": ${params.type === 'multiple-choice' ? '["A) ...", "B) ...", "C) ...", "D) ..."]' : 'null'},
+      "correct_answer": "Correct answer",
+      "difficulty_score": ${difficultyProfile.targetDifficultyScore},
+      "explanation": "Short reasoning only if needed",
+      "needs_image": false,
+      "image_spec": null,
+      "cognitive_level": "${difficultyProfile.bloomBand}",
+      "real_world_connection": "Optional concise note",
+      "common_mistakes": ["Short mistake pattern"],
+      "prerequisite_concepts": ["Concept 1", "Concept 2"]
+    }
+  ]
+}`;
 
     return prompt;
+  }
+
+  private static getVisualSchema(): string {
+    const imageTypes = IMAGE_SPEC_TYPES.map((type) => `"${type}"`).join(' | ');
+
+    return `"needs_image": boolean
+  true only if the learner must inspect a diagram to answer correctly
+  false for pure calculation, pure recall, text-only theory, or any question whose full setup is already explicit in words
+
+"image_spec": null | {
+  "type": ${imageTypes},
+  "elements": string[],
+  "labels": string[]
+}
+
+If needs_image is false, image_spec must be null.
+If needs_image is true, image_spec must be specific and use only allowed tokens.
+Never use free-form prose inside image_spec.elements.
+
+Allowed elements by type:
+${buildImageSpecVocabulary()}
+
+Examples:
+- Pure numerical force question with all magnitudes stated in text -> needs_image: false, image_spec: null
+- Pure numerical circuit question using Ohm's law with no topology ambiguity -> needs_image: false, image_spec: null
+- Pure numerical cell-function question asking the function of mitochondria -> needs_image: false, image_spec: null
+- Pure numerical function question asking the value of f(2) from an explicit formula -> needs_image: false, image_spec: null
+- Geometry question that depends on a triangle or circle figure -> needs_image: true
+- Graph-reading question that depends on axes, curve shape, or plotted points -> needs_image: true
+- Circuit topology question that depends on series_branch or parallel_branch layout -> needs_image: true
+- Ray path question through a mirror or lens -> needs_image: true
+- Force-resolution question that depends on angled or component forces -> needs_image: true`;
   }
 
   private static getQualityChecklist(type: string): string[] {

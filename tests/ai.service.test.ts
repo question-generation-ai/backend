@@ -72,6 +72,32 @@ describe('GeminiAIService', () => {
     );
   });
 
+  it('requests structured JSON output from Gemini for parser stability', async () => {
+    resetGeminiEnv();
+    const { GeminiAIService, mockedAxios } = await loadGeminiService();
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: '[]' }]
+            }
+          }
+        ]
+      }
+    });
+
+    await GeminiAIService.generateContent('hello', 1);
+
+    expect(mockedAxios.post.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        generationConfig: expect.objectContaining({
+          responseMimeType: 'application/json',
+        })
+      })
+    );
+  });
+
   it('fails fast for non-retryable Gemini configuration errors', async () => {
     resetGeminiEnv();
     const upstreamError = {
